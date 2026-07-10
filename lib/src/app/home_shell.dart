@@ -23,11 +23,12 @@ import '../workspace/html_export.dart';
 import '../workspace/workspace_controller.dart';
 import 'app_menu.dart';
 import 'platform/window_support.dart';
+import 'sidebar/articles_pane.dart';
 import 'sidebar/file_tree.dart';
 import 'sidebar/outline_pane.dart';
+import 'sidebar/search_pane.dart';
+import 'sidebar/sidebar_pane.dart';
 import 'status_bar.dart';
-
-enum _SidebarTab { files, outline }
 
 enum _DirtyChoice { save, discard, cancel }
 
@@ -46,7 +47,7 @@ class _HomeShellState extends State<HomeShell> {
 
   bool _sidebarVisible = true;
   bool _alwaysOnTop = false;
-  _SidebarTab _sidebarTab = _SidebarTab.files;
+  SidebarPane _sidebarPane = SidebarPane.fileTree;
   String? _windowTitle;
 
   @override
@@ -354,6 +355,8 @@ class _HomeShellState extends State<HomeShell> {
         alwaysOnTop: _alwaysOnTop,
         toggleAlwaysOnTop: _toggleAlwaysOnTop,
         insertTable: _insertTableDialog,
+        activeSidebarPane: _sidebarPane,
+        selectSidebarPane: _selectSidebarPane,
       );
 
   /// Shell-level shortcuts for platforms without a native menu bar. The
@@ -458,27 +461,57 @@ class _HomeShellState extends State<HomeShell> {
             children: [
               Row(
                 children: [
-                  for (final tab in _SidebarTab.values)
+                  for (final pane in SidebarPane.values)
                     Expanded(
                       child: _SidebarTabButton(
-                        label: tab == _SidebarTab.files ? 'Files' : 'Outline',
-                        selected: _sidebarTab == tab,
+                        label: pane.label,
+                        selected: _sidebarPane == pane,
                         theme: theme,
-                        onTap: () => setState(() => _sidebarTab = tab),
+                        onTap: () => setState(() => _sidebarPane = pane),
                       ),
                     ),
                 ],
               ),
-              Expanded(
-                child: _sidebarTab == _SidebarTab.files
-                    ? FileTree(onOpenFile: _openPath)
-                    : const OutlinePane(),
-              ),
+              Expanded(child: _buildSidebarPane()),
             ],
           ),
         ),
       ),
     );
+  }
+
+  Widget _buildSidebarPane() {
+    return switch (_sidebarPane) {
+      SidebarPane.fileTree => FileTree(onOpenFile: _openPath),
+      SidebarPane.outline => const OutlinePane(),
+      SidebarPane.articles => ArticlesPane(onOpenFile: _openPath),
+      SidebarPane.search => SearchPane(onOpenMatch: _openSearchMatch),
+    };
+  }
+
+  /// View-menu pane selection: switches the pane and reveals the sidebar.
+  void _selectSidebarPane(SidebarPane pane) {
+    setState(() {
+      _sidebarPane = pane;
+      _sidebarVisible = true;
+    });
+  }
+
+  /// Opens [path] and focuses the first block containing [lineText].
+  Future<void> _openSearchMatch(String path, String lineText) async {
+    if (_doc.filePath != path) {
+      await _openPath(path);
+      if (_doc.filePath != path) return; // cancelled or failed
+    }
+    final needle = lineText.trim();
+    if (needle.isEmpty) return;
+    for (final block in _doc.doc.blocks) {
+      final at = block.source.indexOf(needle);
+      if (at >= 0) {
+        _editor.focusBlock(block.id, offset: at);
+        return;
+      }
+    }
   }
 
   Widget _buildEditorArea() {

@@ -13,6 +13,7 @@ import '../editor/editor_controller.dart';
 import '../theme/theme_manager.dart';
 import '../workspace/workspace_controller.dart';
 import 'platform/window_support.dart';
+import 'sidebar/sidebar_pane.dart';
 
 /// Shell-owned menu actions. File actions already run the confirm-if-dirty
 /// flow; editor/theme actions are invoked directly on the controllers.
@@ -31,6 +32,8 @@ class AppMenuCallbacks {
     required this.alwaysOnTop,
     required this.toggleAlwaysOnTop,
     required this.insertTable,
+    required this.activeSidebarPane,
+    required this.selectSidebarPane,
   });
 
   final VoidCallback about;
@@ -46,6 +49,8 @@ class AppMenuCallbacks {
   final bool alwaysOnTop;
   final VoidCallback toggleAlwaysOnTop;
   final VoidCallback insertTable;
+  final SidebarPane activeSidebarPane;
+  final void Function(SidebarPane pane) selectSidebarPane;
 }
 
 /// Routes a text-editing intent to the currently focused editable field.
@@ -552,6 +557,18 @@ List<PlatformMenu> buildPlatformMenus({
                   meta: true, shift: true),
               onSelected: actions.toggleSidebar,
             ),
+            for (final pane in [
+              SidebarPane.outline,
+              SidebarPane.articles,
+              SidebarPane.fileTree,
+              SidebarPane.search,
+            ])
+              PlatformMenuItem(
+                label: actions.activeSidebarPane == pane
+                    ? '✓ ${pane == SidebarPane.fileTree ? 'File Tree' : pane.label}'
+                    : '   ${pane == SidebarPane.fileTree ? 'File Tree' : pane.label}',
+                onSelected: () => actions.selectSidebarPane(pane),
+              ),
           ],
         ),
         PlatformMenuItemGroup(
@@ -984,6 +1001,21 @@ class AppMenuBar extends StatelessWidget {
         ),
         SubmenuButton(
           menuChildren: [
+            for (final pane in [
+              SidebarPane.outline,
+              SidebarPane.articles,
+              SidebarPane.fileTree,
+              SidebarPane.search,
+            ])
+              MenuItemButton(
+                leadingIcon: actions.activeSidebarPane == pane
+                    ? const Icon(Icons.check, size: 16)
+                    : const SizedBox(width: 16),
+                onPressed: () => actions.selectSidebarPane(pane),
+                child: Text(
+                    pane == SidebarPane.fileTree ? 'File Tree' : pane.label),
+              ),
+            const Divider(height: 8),
             MenuItemButton(
               onPressed: actions.toggleSidebar,
               shortcut: cmd(LogicalKeyboardKey.keyL, shift: true),
