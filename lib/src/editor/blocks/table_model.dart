@@ -120,6 +120,43 @@ class TableShape {
   }
 }
 
+/// Builds prettified table source from cell texts (header first, no
+/// delimiter row — it is generated) and per-column alignments: aligned
+/// pipes, cells padded to the widest content, min-4-dash delimiters.
+String buildTableSource(List<List<String>> rows, List<TextAlign> alignments) {
+  final cols =
+      rows.fold<int>(1, (m, r) => r.length > m ? r.length : m);
+  String cellAt(List<String> row, int c) => c < row.length ? row[c] : '';
+
+  const minWidth = 4;
+  final widths = List<int>.generate(cols, (c) {
+    var w = minWidth;
+    for (final row in rows) {
+      if (cellAt(row, c).length > w) w = cellAt(row, c).length;
+    }
+    return w;
+  });
+
+  String delimiterCell(int c) {
+    final align = c < alignments.length ? alignments[c] : TextAlign.left;
+    final w = widths[c];
+    return switch (align) {
+      TextAlign.center => ':${'-' * (w - 2)}:',
+      TextAlign.right => '${'-' * (w - 1)}:',
+      _ => '-' * w,
+    };
+  }
+
+  String formatRow(List<String> cells) =>
+      '| ${[for (var c = 0; c < cols; c++) cellAt(cells, c).padRight(widths[c])].join(' | ')} |';
+
+  return [
+    formatRow(rows.isEmpty ? const [''] : rows.first),
+    '| ${[for (var c = 0; c < cols; c++) delimiterCell(c)].join(' | ')} |',
+    for (final row in rows.skip(1)) formatRow(row),
+  ].join('\n');
+}
+
 /// Reformats table source with aligned pipes and padded cells:
 ///
 /// ```
@@ -134,8 +171,6 @@ String prettifyTable(String source) {
   final shape = TableShape(source);
   if (shape.lineCount < 2) return source;
   final cols = shape.columnCount;
-
-  // Collect cell texts; delimiter row only contributes alignment.
   final rows = <List<String>>[];
   for (var li = 0; li < shape.lineCount; li++) {
     if (li == 1) continue;
@@ -144,34 +179,5 @@ String prettifyTable(String source) {
         c < shape.cellsOnLine(li).length ? shape.textOf(li, c) : '',
     ]);
   }
-
-  const minWidth = 4;
-  final widths = List<int>.generate(cols, (c) {
-    var w = minWidth;
-    for (final row in rows) {
-      if (row[c].length > w) w = row[c].length;
-    }
-    return w;
-  });
-
-  String delimiterCell(int c) {
-    final align =
-        c < shape.alignments.length ? shape.alignments[c] : TextAlign.left;
-    final w = widths[c];
-    return switch (align) {
-      TextAlign.center => ':${'-' * (w - 2)}:',
-      TextAlign.right => '${'-' * (w - 1)}:',
-      _ => '-' * w,
-    };
-  }
-
-  String formatRow(List<String> cells) =>
-      '| ${[for (var c = 0; c < cols; c++) cells[c].padRight(widths[c])].join(' | ')} |';
-
-  final out = <String>[
-    formatRow(rows.first),
-    '| ${[for (var c = 0; c < cols; c++) delimiterCell(c)].join(' | ')} |',
-    for (final row in rows.skip(1)) formatRow(row),
-  ];
-  return out.join('\n');
+  return buildTableSource(rows, shape.alignments);
 }

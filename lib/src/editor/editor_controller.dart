@@ -1639,6 +1639,148 @@ class EditorController extends ChangeNotifier {
     focusTableCell(id, target, col);
   }
 
+  // ---- Table row/column operations (Paragraph > Table) ----
+
+  /// Runs [op] over the focused table's cell matrix (header first, no
+  /// delimiter row) and alignments, rebuilds prettified source, and focuses
+  /// ([focusRow], [focusCol]) — line-index based. A table emptied of
+  /// columns is deleted.
+  void _applyTableOp(
+    void Function(List<List<String>> rows, List<TextAlign> alignments,
+            int dataIndex, int col)
+        op, {
+    int Function(int row, int dataIndex)? focusRow,
+    int Function(int col)? focusCol,
+  }) {
+    final id = _focusedBlockId;
+    final cell = activeTableCell();
+    final block = focusedBlock;
+    if (id == null || cell == null || block == null) return;
+    final (row, col) = cell;
+    final shape = TableShape(editing.text);
+    final rows = <List<String>>[];
+    for (var li = 0; li < shape.lineCount; li++) {
+      if (li == 1) continue;
+      rows.add([
+        for (var c = 0; c < shape.columnCount; c++)
+          c < shape.cellsOnLine(li).length ? shape.textOf(li, c) : '',
+      ]);
+    }
+    final alignments = List<TextAlign>.of(shape.alignments);
+    while (alignments.length < shape.columnCount) {
+      alignments.add(TextAlign.left);
+    }
+    final dataIndex = row == 0 ? 0 : row - 1; // rows-list index
+    op(rows, alignments, dataIndex, col);
+    if (rows.isEmpty || rows.every((r) => r.isEmpty)) {
+      deleteTable();
+      return;
+    }
+    final source = buildTableSource(rows, alignments);
+    docCtrl.changeBlockSource(id, source,
+        kind: EditKind.blockOp,
+        caretBefore: _snap(editing.selection));
+    final targetRow = focusRow?.call(row, dataIndex) ?? row;
+    final targetCol = focusCol?.call(col) ?? col;
+    final lineCount = source.split('\n').length;
+    focusTableCell(id, targetRow.clamp(0, lineCount - 1), targetCol);
+  }
+
+  void addTableRowAbove() => _applyTableOp(
+        (rows, aligns, d, c) => rows.insert(d == 0 ? 1 : d, // header pinned
+            List.filled(rows.first.length, '')),
+        focusRow: (row, d) => row == 0 ? 2 : row,
+      );
+
+  void addTableRowBelow() => _applyTableOp(
+        (rows, aligns, d, c) =>
+            rows.insert(d + 1, List.filled(rows.first.length, '')),
+        focusRow: (row, d) => row == 0 ? 2 : row + 1,
+      );
+
+  void addTableColumnBefore() => _applyTableOp(
+        (rows, aligns, d, c) {
+          for (final r in rows) {
+            r.insert(c.clamp(0, r.length), '');
+          }
+          aligns.insert(c.clamp(0, aligns.length), TextAlign.left);
+        },
+      );
+
+  void addTableColumnAfter() => _applyTableOp(
+        (rows, aligns, d, c) {
+          for (final r in rows) {
+            r.insert((c + 1).clamp(0, r.length), '');
+          }
+          aligns.insert((c + 1).clamp(0, aligns.length), TextAlign.left);
+        },
+        focusCol: (c) => c + 1,
+      );
+
+  void deleteTableRow() => _applyTableOp(
+        (rows, aligns, d, c) {
+          if (d > 0 && d < rows.length) rows.removeAt(d); // header pinned
+        },
+        focusRow: (row, d) => row <= 2 ? 2 : row - 1,
+      );
+
+  void deleteTableColumn() => _applyTableOp(
+        (rows, aligns, d, c) {
+          for (final r in rows) {
+            if (c < r.length) r.removeAt(c);
+          }
+          if (c < aligns.length) aligns.removeAt(c);
+        },
+        focusCol: (c) => c > 0 ? c - 1 : 0,
+      );
+
+  void _moveTableColumn({required bool left}) => _applyTableOp(
+        (rows, aligns, d, c) {
+          final t = left ? c - 1 : c + 1;
+          if (t < 0 || t >= rows.first.length) return;
+          for (final r in rows) {
+            if (c < r.length && t < r.length) {
+              final tmp = r[c];
+              r[c] = r[t];
+              r[t] = tmp;
+            }
+          }
+          if (c < aligns.length && t < aligns.length) {
+            final tmp = aligns[c];
+            aligns[c] = aligns[t];
+            aligns[t] = tmp;
+          }
+        },
+        focusCol: (c) => left ? (c > 0 ? c - 1 : 0) : c + 1,
+      );
+
+  void moveTableColumnLeft() => _moveTableColumn(left: true);
+
+  void moveTableColumnRight() => _moveTableColumn(left: false);
+
+  /// Copies the focused table's raw markdown source.
+  void copyTable() {
+    final block = focusedBlock;
+    if (block == null || block.kind != BlockKind.table) return;
+    Clipboard.setData(ClipboardData(text: block.source));
+  }
+
+  /// Deletes the focused table block entirely.
+  void deleteTable() {
+    final id = _focusedBlockId;
+    final block = focusedBlock;
+    if (id == null || block == null || block.kind != BlockKind.table) return;
+    final i = docCtrl.doc.indexOfBlock(id);
+    if (i < 0) return;
+    docCtrl.spliceBlocks(
+      index: i, before: [block], after: [], kind: EditKind.blockOp,
+      caretBefore: _snap(editing.selection),
+    );
+    final blocks = docCtrl.doc.blocks;
+    final target = blocks[(i - 1).clamp(0, blocks.length - 1)];
+    focusBlock(target.id, offset: target.source.length);
+  }
+
   /// Prettifies a table block's source in place (used on blur so the stored
   /// markdown always looks clean in source mode and on disk).
   void _prettifyTableBlock(String blockId) {

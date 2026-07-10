@@ -406,11 +406,65 @@ List<PlatformMenu> buildPlatformMenus({
         ),
         PlatformMenuItemGroup(
           members: [
-            PlatformMenuItem(
-              label: 'Insert Table…',
-              shortcut: const SingleActivator(LogicalKeyboardKey.keyT,
-                  meta: true, alt: true),
-              onSelected: actions.insertTable,
+            PlatformMenu(
+              label: 'Table',
+              menus: [
+                PlatformMenuItemGroup(
+                  members: [
+                    PlatformMenuItem(
+                      label: 'Insert Table…',
+                      shortcut: const SingleActivator(LogicalKeyboardKey.keyT,
+                          meta: true, alt: true),
+                      onSelected: actions.insertTable,
+                    ),
+                  ],
+                ),
+                PlatformMenuItemGroup(
+                  members: [
+                    PlatformMenuItem(
+                        label: 'Add Row Above',
+                        onSelected: editor.addTableRowAbove),
+                    PlatformMenuItem(
+                        label: 'Add Row Below',
+                        onSelected: editor.addTableRowBelow),
+                    PlatformMenuItem(
+                        label: 'Add Column Before',
+                        onSelected: editor.addTableColumnBefore),
+                    PlatformMenuItem(
+                        label: 'Add Column After',
+                        onSelected: editor.addTableColumnAfter),
+                  ],
+                ),
+                PlatformMenuItemGroup(
+                  members: [
+                    PlatformMenuItem(
+                        label: 'Move Column Left',
+                        onSelected: editor.moveTableColumnLeft),
+                    PlatformMenuItem(
+                        label: 'Move Column Right',
+                        onSelected: editor.moveTableColumnRight),
+                  ],
+                ),
+                PlatformMenuItemGroup(
+                  members: [
+                    PlatformMenuItem(
+                        label: 'Delete Row',
+                        onSelected: editor.deleteTableRow),
+                    PlatformMenuItem(
+                        label: 'Delete Column',
+                        onSelected: editor.deleteTableColumn),
+                  ],
+                ),
+                PlatformMenuItemGroup(
+                  members: [
+                    PlatformMenuItem(
+                        label: 'Copy Table', onSelected: editor.copyTable),
+                    PlatformMenuItem(
+                        label: 'Delete Table',
+                        onSelected: editor.deleteTable),
+                  ],
+                ),
+              ],
             ),
             PlatformMenuItem(
               label: 'Code Fences',
@@ -903,9 +957,48 @@ class AppMenuBar extends StatelessWidget {
               child: const Text('Decrease Heading Level'),
             ),
             const Divider(height: 8),
-            MenuItemButton(
-              onPressed: actions.insertTable,
-              child: const Text('Insert Table…'),
+            SubmenuButton(
+              menuChildren: [
+                MenuItemButton(
+                  onPressed: actions.insertTable,
+                  child: const Text('Insert Table…'),
+                ),
+                const Divider(height: 8),
+                MenuItemButton(
+                    onPressed: editor.addTableRowAbove,
+                    child: const Text('Add Row Above')),
+                MenuItemButton(
+                    onPressed: editor.addTableRowBelow,
+                    child: const Text('Add Row Below')),
+                MenuItemButton(
+                    onPressed: editor.addTableColumnBefore,
+                    child: const Text('Add Column Before')),
+                MenuItemButton(
+                    onPressed: editor.addTableColumnAfter,
+                    child: const Text('Add Column After')),
+                const Divider(height: 8),
+                MenuItemButton(
+                    onPressed: editor.moveTableColumnLeft,
+                    child: const Text('Move Column Left')),
+                MenuItemButton(
+                    onPressed: editor.moveTableColumnRight,
+                    child: const Text('Move Column Right')),
+                const Divider(height: 8),
+                MenuItemButton(
+                    onPressed: editor.deleteTableRow,
+                    child: const Text('Delete Row')),
+                MenuItemButton(
+                    onPressed: editor.deleteTableColumn,
+                    child: const Text('Delete Column')),
+                const Divider(height: 8),
+                MenuItemButton(
+                    onPressed: editor.copyTable,
+                    child: const Text('Copy Table')),
+                MenuItemButton(
+                    onPressed: editor.deleteTable,
+                    child: const Text('Delete Table')),
+              ],
+              child: const Text('Table'),
             ),
             MenuItemButton(
               onPressed: editor.convertToCodeFence,

@@ -689,6 +689,74 @@ void main() {
     });
   });
 
+  group('table row/column operations', () {
+    const base = '| a    | b    |\n| ---- | ---- |\n| c    | d    |';
+
+    test('add row below and above', () {
+      doc.loadText(base);
+      final id = doc.doc.blocks.first.id;
+      editor.focusTableCell(id, 2, 0);
+      editor.addTableRowBelow();
+      expect(doc.doc.blocks.single.source.split('\n'), hasLength(4));
+      expect(editor.activeTableCell(), (3, 0));
+      editor.addTableRowAbove();
+      expect(doc.doc.blocks.single.source.split('\n'), hasLength(5));
+    });
+
+    test('add and delete column', () {
+      doc.loadText(base);
+      final id = doc.doc.blocks.first.id;
+      editor.focusTableCell(id, 0, 0);
+      editor.addTableColumnAfter();
+      expect(doc.doc.blocks.single.source.split('\n')[0],
+          '| a    |      | b    |');
+      expect(editor.activeTableCell(), (0, 1));
+      editor.deleteTableColumn();
+      expect(doc.doc.blocks.single.source.split('\n')[0], '| a    | b    |');
+    });
+
+    test('move column right swaps content and alignment', () {
+      doc.loadText('| a | b |\n|:-:|---|\n| c | d |');
+      final id = doc.doc.blocks.first.id;
+      editor.focusTableCell(id, 0, 0);
+      editor.moveTableColumnRight();
+      final lines = doc.doc.blocks.single.source.split('\n');
+      expect(lines[0], '| b    | a    |');
+      expect(lines[1], '| ---- | :--: |');
+      expect(lines[2], '| d    | c    |');
+      expect(editor.activeTableCell(), (0, 1));
+    });
+
+    test('delete row keeps the header pinned', () {
+      doc.loadText(base);
+      final id = doc.doc.blocks.first.id;
+      editor.focusTableCell(id, 0, 0); // header
+      editor.deleteTableRow(); // must not delete the header
+      expect(doc.doc.blocks.single.source.split('\n'), hasLength(3));
+      editor.focusTableCell(id, 2, 0);
+      editor.deleteTableRow();
+      expect(doc.doc.blocks.single.source.split('\n'), hasLength(2));
+    });
+
+    test('delete table removes the block and refocuses', () {
+      doc.loadText('before\n\n$base');
+      final table = doc.doc.blocks[1];
+      editor.focusTableCell(table.id, 2, 1);
+      editor.deleteTable();
+      expect(doc.doc.blocks.map((b) => b.kind),
+          isNot(contains(BlockKind.table)));
+      expect(editor.focusedBlockId, doc.doc.blocks.first.id);
+    });
+
+    test('deleting the last column deletes the table', () {
+      doc.loadText('| a |\n|---|\n| b |');
+      final id = doc.doc.blocks.first.id;
+      editor.focusTableCell(id, 0, 0);
+      editor.deleteTableColumn();
+      expect(doc.doc.blocks.single.kind, BlockKind.paragraph);
+    });
+  });
+
   group('tables', () {
     test('Tab selects the next cell content', () {
       doc.loadText('| a | b |\n|---|---|\n| c | d |');
