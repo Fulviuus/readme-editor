@@ -80,7 +80,18 @@ class _HomeShellState extends State<HomeShell> {
   String get _fileName =>
       _doc.filePath == null ? 'Untitled' : p.basename(_doc.filePath!);
 
+  String? _menuLineEnding;
+  bool? _menuFinalNewline;
+
   void _syncWindowTitle() {
+    // Menu checkmarks (Line Endings) read document state at build time;
+    // rebuild the shell when those specific facts change.
+    if (_menuLineEnding != _doc.doc.lineEnding ||
+        _menuFinalNewline != _doc.doc.hadFinalNewline) {
+      _menuLineEnding = _doc.doc.lineEnding;
+      _menuFinalNewline = _doc.doc.hadFinalNewline;
+      if (mounted) setState(() {});
+    }
     if (kIsWeb) return;
     final title = '$_fileName${_doc.dirty ? ' •' : ''} — readme';
     if (title == _windowTitle) return;

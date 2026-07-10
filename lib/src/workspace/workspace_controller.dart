@@ -64,9 +64,38 @@ class WorkspaceController extends ChangeNotifier {
   /// across sessions under the `recentFiles` preference key.
   List<String> get recentFiles => List.unmodifiable(_recentFiles);
 
+  String? _lastClosedFile;
+
+  /// The file most recently replaced in the editor (File > Open Recent >
+  /// Reopen Closed File), or null.
+  String? get lastClosedFile => _lastClosedFile;
+
+  void _rememberClosed(String? replacedPath, {String? incoming}) {
+    if (replacedPath != null && replacedPath != incoming) {
+      _lastClosedFile = replacedPath;
+    }
+  }
+
+  /// Reopens the file that was last replaced in the editor.
+  Future<void> reopenClosedFile() async {
+    final path = _lastClosedFile;
+    if (path != null) await openPath(path);
+  }
+
+  /// Empties the recent-files list (persisted).
+  Future<void> clearRecentFiles() async {
+    _recentFiles = const [];
+    notifyListeners();
+    try {
+      await _restoreFuture;
+      await _prefs.setStringList(_recentFilesKey, const []);
+    } catch (_) {}
+  }
+
   /// Replaces the buffer with an empty untitled document (no file path).
   /// Callers confirm with the user first when [DocumentController.dirty].
   Future<void> newFile() async {
+    _rememberClosed(docCtrl.filePath);
     docCtrl.loadText('');
     notifyListeners();
   }
@@ -78,6 +107,7 @@ class WorkspaceController extends ChangeNotifier {
     final file = await openFile(acceptedTypeGroups: const [_markdownTypeGroup]);
     if (file == null) return false;
     if (!supportsFileSystem) {
+      _rememberClosed(docCtrl.filePath);
       docCtrl.loadText(await file.readAsString());
       notifyListeners();
       return true;
@@ -97,6 +127,7 @@ class WorkspaceController extends ChangeNotifier {
       return;
     }
     lastError = null;
+    _rememberClosed(docCtrl.filePath, incoming: path);
     docCtrl.loadText(text, path: path);
     await _addRecentFile(path);
     notifyListeners();

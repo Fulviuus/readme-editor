@@ -48,6 +48,12 @@ class AppMenuCallbacks {
   final VoidCallback insertTable;
 }
 
+/// Routes a text-editing intent to the currently focused editable field.
+void _dispatchTextIntent(Intent intent) {
+  final context = FocusManager.instance.primaryFocus?.context;
+  if (context != null) Actions.maybeInvoke(context, intent);
+}
+
 // ---- macOS: PlatformMenuBar ----
 
 /// The native macOS menu bar. Key equivalents are owned by the platform menu
@@ -128,6 +134,18 @@ List<PlatformMenu> buildPlatformMenus({
             PlatformMenu(
               label: 'Open Recent',
               menus: [
+                if (workspace.lastClosedFile != null)
+                  PlatformMenuItemGroup(
+                    members: [
+                      PlatformMenuItem(
+                        label: 'Reopen Closed File',
+                        shortcut: const SingleActivator(LogicalKeyboardKey.keyT,
+                            meta: true, shift: true),
+                        onSelected: () =>
+                            actions.openRecent(workspace.lastClosedFile!),
+                      ),
+                    ],
+                  ),
                 PlatformMenuItemGroup(
                   members: [
                     if (recents.isEmpty)
@@ -140,6 +158,15 @@ List<PlatformMenu> buildPlatformMenus({
                         ),
                   ],
                 ),
+                if (recents.isNotEmpty)
+                  PlatformMenuItemGroup(
+                    members: [
+                      PlatformMenuItem(
+                        label: 'Clear Items',
+                        onSelected: () => workspace.clearRecentFiles(),
+                      ),
+                    ],
+                  ),
               ],
             ),
           ],
@@ -187,6 +214,41 @@ List<PlatformMenu> buildPlatformMenus({
             ),
           ],
         ),
+        // Clipboard items dispatch text-editing intents to whatever field
+        // has focus (editor block, find bar, source mode) — the menu owns
+        // the key equivalents on macOS, so routing must be focus-based.
+        PlatformMenuItemGroup(
+          members: [
+            PlatformMenuItem(
+              label: 'Cut',
+              shortcut:
+                  const SingleActivator(LogicalKeyboardKey.keyX, meta: true),
+              onSelected: () => _dispatchTextIntent(
+                  CopySelectionTextIntent.cut(SelectionChangedCause.keyboard)),
+            ),
+            PlatformMenuItem(
+              label: 'Copy',
+              shortcut:
+                  const SingleActivator(LogicalKeyboardKey.keyC, meta: true),
+              onSelected: () =>
+                  _dispatchTextIntent(CopySelectionTextIntent.copy),
+            ),
+            PlatformMenuItem(
+              label: 'Paste',
+              shortcut:
+                  const SingleActivator(LogicalKeyboardKey.keyV, meta: true),
+              onSelected: () => _dispatchTextIntent(
+                  const PasteTextIntent(SelectionChangedCause.keyboard)),
+            ),
+            PlatformMenuItem(
+              label: 'Select All',
+              shortcut:
+                  const SingleActivator(LogicalKeyboardKey.keyA, meta: true),
+              onSelected: () => _dispatchTextIntent(
+                  const SelectAllTextIntent(SelectionChangedCause.keyboard)),
+            ),
+          ],
+        ),
         PlatformMenuItemGroup(
           members: [
             PlatformMenuItem(
@@ -226,6 +288,38 @@ List<PlatformMenu> buildPlatformMenus({
             PlatformMenuItem(
               label: 'Copy Link Address',
               onSelected: editor.copyLinkAtCaret,
+            ),
+          ],
+        ),
+        PlatformMenu(
+          label: 'Line Endings',
+          menus: [
+            PlatformMenuItemGroup(
+              members: [
+                PlatformMenuItem(
+                  label: editor.docCtrl.doc.lineEnding == '\r\n'
+                      ? '✓ Windows Line Endings (CRLF)'
+                      : '   Windows Line Endings (CRLF)',
+                  onSelected: () => editor.docCtrl.setLineEnding('\r\n'),
+                ),
+                PlatformMenuItem(
+                  label: editor.docCtrl.doc.lineEnding == '\n'
+                      ? '✓ Unix Line Endings (LF)'
+                      : '   Unix Line Endings (LF)',
+                  onSelected: () => editor.docCtrl.setLineEnding('\n'),
+                ),
+              ],
+            ),
+            PlatformMenuItemGroup(
+              members: [
+                PlatformMenuItem(
+                  label: editor.docCtrl.doc.hadFinalNewline
+                      ? '✓ Insert Final New Line On Save'
+                      : '   Insert Final New Line On Save',
+                  onSelected: () => editor.docCtrl
+                      .setFinalNewline(!editor.docCtrl.doc.hadFinalNewline),
+                ),
+              ],
             ),
           ],
         ),
@@ -555,6 +649,14 @@ class AppMenuBar extends StatelessWidget {
             ),
             SubmenuButton(
               menuChildren: [
+                if (workspace.lastClosedFile != null) ...[
+                  MenuItemButton(
+                    onPressed: () =>
+                        actions.openRecent(workspace.lastClosedFile!),
+                    child: const Text('Reopen Closed File'),
+                  ),
+                  const Divider(height: 8),
+                ],
                 if (recents.isEmpty)
                   const MenuItemButton(child: Text('No Recent Files'))
                 else
@@ -563,6 +665,13 @@ class AppMenuBar extends StatelessWidget {
                       onPressed: () => actions.openRecent(path),
                       child: Text(p.basename(path)),
                     ),
+                if (recents.isNotEmpty) ...[
+                  const Divider(height: 8),
+                  MenuItemButton(
+                    onPressed: () => workspace.clearRecentFiles(),
+                    child: const Text('Clear Items'),
+                  ),
+                ],
               ],
               child: const Text('Open Recent'),
             ),
@@ -598,6 +707,29 @@ class AppMenuBar extends StatelessWidget {
               child: const Text('Redo'),
             ),
             const Divider(height: 8),
+            // No shortcut property on these: the focused field already owns
+            // Ctrl+X/C/V/A natively; the items exist for mouse access.
+            MenuItemButton(
+              onPressed: () => _dispatchTextIntent(
+                  CopySelectionTextIntent.cut(SelectionChangedCause.keyboard)),
+              child: const Text('Cut'),
+            ),
+            MenuItemButton(
+              onPressed: () =>
+                  _dispatchTextIntent(CopySelectionTextIntent.copy),
+              child: const Text('Copy'),
+            ),
+            MenuItemButton(
+              onPressed: () => _dispatchTextIntent(
+                  const PasteTextIntent(SelectionChangedCause.keyboard)),
+              child: const Text('Paste'),
+            ),
+            MenuItemButton(
+              onPressed: () => _dispatchTextIntent(
+                  const SelectAllTextIntent(SelectionChangedCause.keyboard)),
+              child: const Text('Select All'),
+            ),
+            const Divider(height: 8),
             MenuItemButton(
               onPressed: editor.toggleBold,
               shortcut: cmd(LogicalKeyboardKey.keyB),
@@ -630,6 +762,35 @@ class AppMenuBar extends StatelessWidget {
             MenuItemButton(
               onPressed: editor.copyLinkAtCaret,
               child: const Text('Copy Link Address'),
+            ),
+            const Divider(height: 8),
+            SubmenuButton(
+              menuChildren: [
+                MenuItemButton(
+                  leadingIcon: editor.docCtrl.doc.lineEnding == '\r\n'
+                      ? const Icon(Icons.check, size: 16)
+                      : const SizedBox(width: 16),
+                  onPressed: () => editor.docCtrl.setLineEnding('\r\n'),
+                  child: const Text('Windows Line Endings (CRLF)'),
+                ),
+                MenuItemButton(
+                  leadingIcon: editor.docCtrl.doc.lineEnding == '\n'
+                      ? const Icon(Icons.check, size: 16)
+                      : const SizedBox(width: 16),
+                  onPressed: () => editor.docCtrl.setLineEnding('\n'),
+                  child: const Text('Unix Line Endings (LF)'),
+                ),
+                const Divider(height: 8),
+                MenuItemButton(
+                  leadingIcon: editor.docCtrl.doc.hadFinalNewline
+                      ? const Icon(Icons.check, size: 16)
+                      : const SizedBox(width: 16),
+                  onPressed: () => editor.docCtrl
+                      .setFinalNewline(!editor.docCtrl.doc.hadFinalNewline),
+                  child: const Text('Insert Final New Line On Save'),
+                ),
+              ],
+              child: const Text('Line Endings'),
             ),
             const Divider(height: 8),
             MenuItemButton(

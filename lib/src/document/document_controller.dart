@@ -114,6 +114,25 @@ class DocumentController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Switches the on-disk line-ending style ('\n' or '\r\n'). Marks the
+  /// document dirty; not undoable (a file-level setting, not a text edit).
+  void setLineEnding(String ending) {
+    if (ending != '\n' && ending != '\r\n') return;
+    if (_doc.lineEnding == ending) return;
+    _doc.lineEnding = ending;
+    _revision++;
+    notifyListeners();
+  }
+
+  /// Toggles whether the file ends with a final newline on save. Marks the
+  /// document dirty; not undoable.
+  void setFinalNewline(bool enabled) {
+    if (_doc.hadFinalNewline == enabled) return;
+    _doc.hadFinalNewline = enabled;
+    _revision++;
+    notifyListeners();
+  }
+
   void loadText(String text, {String? path}) {
     _doc = Document.parse(text);
     filePath = path;
