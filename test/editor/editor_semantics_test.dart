@@ -437,6 +437,123 @@ void main() {
     });
   });
 
+  group('paragraph commands', () {
+    test('increase/decrease heading level walks the ladder', () {
+      doc.loadText('text');
+      editor.focusBlock(doc.doc.blocks.first.id, offset: 0);
+      editor.increaseHeadingLevel(); // paragraph -> H6
+      expect(doc.doc.blocks.single.source, '###### text');
+      editor.increaseHeadingLevel();
+      expect(doc.doc.blocks.single.source, '##### text');
+      editor.decreaseHeadingLevel();
+      expect(doc.doc.blocks.single.source, '###### text');
+      editor.decreaseHeadingLevel(); // H6 -> paragraph
+      expect(doc.doc.blocks.single.source, 'text');
+    });
+
+    test('quote conversion toggles', () {
+      doc.loadText('a\nb');
+      editor.focusBlock(doc.doc.blocks.first.id);
+      editor.convertToQuote();
+      expect(doc.doc.blocks.single.source, '> a\n> b');
+      expect(doc.doc.blocks.single.kind, BlockKind.blockquote);
+      editor.convertToQuote();
+      expect(doc.doc.blocks.single.source, 'a\nb');
+    });
+
+    test('list conversions strip and re-mark lines', () {
+      doc.loadText('a\nb');
+      final id = doc.doc.blocks.first.id;
+      editor.focusBlock(id);
+      editor.convertToUnorderedList();
+      expect(doc.doc.blocks.single.source, '- a\n- b');
+      editor.focusBlock(id);
+      editor.convertToOrderedList();
+      expect(doc.doc.blocks.single.source, '1. a\n2. b');
+      editor.focusBlock(id);
+      editor.convertToTaskList();
+      expect(doc.doc.blocks.single.source, '- [ ] a\n- [ ] b');
+      editor.focusBlock(id);
+      editor.convertToTaskList(); // toggle off
+      expect(doc.doc.blocks.single.source, 'a\nb');
+    });
+
+    test('code fence toggles around the block', () {
+      doc.loadText('print(1)');
+      final id = doc.doc.blocks.first.id;
+      editor.focusBlock(id);
+      editor.convertToCodeFence();
+      expect(doc.doc.blocks.single.source, '```\nprint(1)\n```');
+      expect(doc.doc.blocks.single.kind, BlockKind.fencedCode);
+      editor.focusBlock(id);
+      editor.convertToCodeFence();
+      expect(doc.doc.blocks.single.source, 'print(1)');
+    });
+
+    test('insert paragraph before/after an opaque block', () {
+      doc.loadText('```\nx\n```');
+      final id = doc.doc.blocks.first.id;
+      editor.focusBlock(id);
+      editor.insertParagraphAfter();
+      expect(doc.doc.blocks, hasLength(2));
+      expect(editor.focusedBlockId, doc.doc.blocks[1].id);
+      editor.focusBlock(id);
+      editor.insertParagraphBefore();
+      expect(doc.doc.blocks, hasLength(3));
+      expect(doc.doc.blocks[0].kind, BlockKind.paragraph);
+      expect(doc.doc.blocks[1].id, id);
+    });
+
+    test('insertTable converts an empty paragraph', () {
+      doc.loadText('');
+      editor.focusBlock(doc.doc.blocks.first.id);
+      editor.insertTable(2, 3);
+      final b = doc.doc.blocks.single;
+      expect(b.kind, BlockKind.table);
+      expect(b.source.split('\n'), hasLength(4)); // header + delim + 2 rows
+    });
+
+    test('front matter inserts once at the top', () {
+      doc.loadText('# Title');
+      editor.insertFrontMatter();
+      expect(doc.doc.blocks.first.kind, BlockKind.frontMatter);
+      final count = doc.doc.blocks.length;
+      editor.insertFrontMatter(); // second call focuses, no duplicate
+      expect(doc.doc.blocks.length, count);
+    });
+
+    test('task status set/toggle at caret line', () {
+      doc.loadText('- [ ] a\n- [x] b');
+      final id = doc.doc.blocks.first.id;
+      editor.focusBlock(id, offset: 3);
+      editor.setTaskStatusAtCaret(checked: true);
+      expect(doc.doc.blocks.single.source, '- [x] a\n- [x] b');
+      editor.setTaskStatusAtCaret();
+      expect(doc.doc.blocks.single.source, '- [ ] a\n- [x] b');
+    });
+
+    test('moveRow swaps list lines and whole blocks', () {
+      doc.loadText('- one\n- two');
+      editor.focusBlock(doc.doc.blocks.first.id, offset: 2); // in 'one'
+      editor.moveRow(up: false);
+      expect(doc.doc.blocks.single.source, '- two\n- one');
+
+      doc.loadText('first\n\nsecond');
+      editor.focusBlock(doc.doc.blocks[1].id, offset: 0);
+      editor.moveRow(up: true);
+      expect(doc.doc.blocks.map((b) => b.source), ['second', 'first']);
+    });
+
+    test('moveRow in a table never crosses the delimiter', () {
+      doc.loadText('| h |\n|---|\n| a |\n| b |');
+      editor.focusBlock(doc.doc.blocks.first.id, offset: 16); // row 'a'
+      editor.moveRow(up: true); // would hit delimiter — must be a no-op
+      expect(doc.doc.blocks.single.source, '| h |\n|---|\n| a |\n| b |');
+      editor.moveRow(up: false);
+      expect(doc.doc.blocks.single.source, '| h |\n|---|\n| b |\n| a |');
+    });
+  });
+
   group('link actions (issue #38)', () {
     test('linkUrlAtCaret finds the link under the caret', () {
       doc.loadText('see [docs](https://x.dev) and https://a.b end');

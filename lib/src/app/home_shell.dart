@@ -259,6 +259,65 @@ class _HomeShellState extends State<HomeShell> {
     if (!kIsWeb) setWindowAlwaysOnTop(_alwaysOnTop);
   }
 
+  /// Paragraph > Insert Table…: rows × columns picker.
+  Future<void> _insertTableDialog() async {
+    var rows = 2;
+    var cols = 2;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Insert Table'),
+          content: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final (label, value, set) in [
+                ('Rows', rows, (int v) => rows = v),
+                ('Columns', cols, (int v) => cols = v),
+              ])
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(label),
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.remove),
+                            onPressed: () => setDialogState(
+                                () => set((value - 1).clamp(1, 99))),
+                          ),
+                          Text('$value',
+                              style: const TextStyle(fontSize: 18)),
+                          IconButton(
+                            icon: const Icon(Icons.add),
+                            onPressed: () => setDialogState(
+                                () => set((value + 1).clamp(1, 99))),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Insert'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed == true) _editor.insertTable(rows, cols);
+  }
+
   void _showAbout() {
     showAboutDialog(
       context: context,
@@ -283,6 +342,7 @@ class _HomeShellState extends State<HomeShell> {
         quit: _quit,
         alwaysOnTop: _alwaysOnTop,
         toggleAlwaysOnTop: _toggleAlwaysOnTop,
+        insertTable: _insertTableDialog,
       );
 
   /// Shell-level shortcuts for platforms without a native menu bar. The

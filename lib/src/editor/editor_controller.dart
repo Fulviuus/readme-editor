@@ -1262,6 +1262,276 @@ class EditorController extends ChangeNotifier {
     }
   }
 
+  // ---- Paragraph-menu commands (block conversions) ----
+
+  static final _quotePrefixRe = RegExp(r'^ {0,3}> ?');
+  static final _anyListMarkerRe =
+      RegExp(r'^(\s*)(?:[-*+]|\d{1,9}[.)])[ \t]+(?:\[[ xX]\][ \t]+)?');
+
+  /// One step up the heading ladder: paragraph → H6 → … → H1.
+  void increaseHeadingLevel() {
+    final block = focusedBlock;
+    if (block == null) return;
+    final level = block.kind == BlockKind.heading ? block.headingLevel : 7;
+    if (level <= 1) return;
+    setHeadingLevel(level - 1);
+  }
+
+  /// One step down the ladder: H1 → … → H6 → paragraph.
+  void decreaseHeadingLevel() {
+    final block = focusedBlock;
+    if (block == null || block.kind != BlockKind.heading) return;
+    final level = block.headingLevel;
+    setHeadingLevel(level >= 6 ? 0 : level + 1);
+  }
+
+  String _stripBlockMarkers(String source) => source
+      .split('\n')
+      .map((l) =>
+          l.replaceFirst(_quotePrefixRe, '').replaceFirst(_anyListMarkerRe, ''))
+      .join('\n');
+
+  /// Toggles the focused block to/from a quote.
+  void convertToQuote() {
+    final block = focusedBlock;
+    if (block == null) return;
+    if (block.kind == BlockKind.blockquote) {
+      _convertTo(_stripBlockMarkers(editing.text), 0);
+      return;
+    }
+    final quoted =
+        editing.text.split('\n').map((l) => '> $l').join('\n');
+    _convertTo(quoted, quoted.length);
+  }
+
+  void _convertToList(String Function(int index) marker,
+      {required bool Function(Block) isAlready}) {
+    final block = focusedBlock;
+    if (block == null) return;
+    const convertible = {
+      BlockKind.paragraph,
+      BlockKind.heading,
+      BlockKind.blockquote,
+      BlockKind.list,
+    };
+    if (!convertible.contains(block.kind)) return;
+    if (isAlready(block)) {
+      _convertTo(_stripBlockMarkers(editing.text), 0);
+      return;
+    }
+    final stripped = _stripBlockMarkers(
+        block.kind == BlockKind.heading ? block.headingText : editing.text);
+    final lines = stripped.split('\n');
+    final converted = [
+      for (var i = 0; i < lines.length; i++) '${marker(i)}${lines[i]}',
+    ].join('\n');
+    _convertTo(converted, converted.length);
+  }
+
+  void convertToUnorderedList() => _convertToList((_) => '- ',
+      isAlready: (b) => b.kind == BlockKind.list && !b.isOrderedList &&
+          !b.hasTaskItems);
+
+  void convertToOrderedList() => _convertToList((i) => '${i + 1}. ',
+      isAlready: (b) => b.kind == BlockKind.list && b.isOrderedList);
+
+  void convertToTaskList() => _convertToList((_) => '- [ ] ',
+      isAlready: (b) => b.kind == BlockKind.list && b.hasTaskItems);
+
+  /// Toggles the focused block to/from a fenced code block.
+  void convertToCodeFence() {
+    final block = focusedBlock;
+    if (block == null) return;
+    if (block.kind == BlockKind.fencedCode) {
+      final body = block.codeBody;
+      _convertTo(body, 0);
+      return;
+    }
+    final newSource = '```\n${editing.text}\n```';
+    _convertTo(newSource, 4); // caret at start of the body
+  }
+
+  /// Toggles the focused block to/from a math block.
+  void convertToMathBlock() {
+    final block = focusedBlock;
+    if (block == null) return;
+    if (block.kind == BlockKind.mathBlock) {
+      _convertTo(block.codeBody, 0);
+      return;
+    }
+    final newSource = '\$\$\n${editing.text}\n\$\$';
+    _convertTo(newSource, 3);
+  }
+
+  /// Inserts a horizontal rule after the focused block (or converts an
+  /// empty focused paragraph) and leaves the caret on a paragraph below.
+  void insertHorizontalRule() {
+    final block = focusedBlock;
+    if (block != null && block.kind == BlockKind.paragraph &&
+        editing.text.isEmpty) {
+      _splitInto([
+        Block(kind: BlockKind.thematicBreak, source: '---'),
+        Block(kind: BlockKind.paragraph, source: ''),
+      ], focusIndex: 1, caret: 0, replacing: block);
+      return;
+    }
+    _insertBlocksAfterFocused([
+      Block(kind: BlockKind.thematicBreak, source: '---'),
+      Block(kind: BlockKind.paragraph, source: ''),
+    ], focusOffset: 1);
+  }
+
+  /// Inserts a YAML front-matter block at the top of the document.
+  void insertFrontMatter() {
+    if (docCtrl.doc.blocks.first.kind == BlockKind.frontMatter) {
+      focusBlock(docCtrl.doc.blocks.first.id, offset: 4);
+      return;
+    }
+    final fm = Block(
+        kind: BlockKind.frontMatter, source: '---\n\n---',
+        blankLinesBefore: 0);
+    docCtrl.spliceBlocks(
+      index: 0, before: [], after: [fm], kind: EditKind.blockOp,
+      caretBefore: _snap(editing.selection),
+      caretAfter: CaretSnapshot(fm.id, 4),
+    );
+    focusBlock(fm.id, offset: 4);
+  }
+
+  void _insertBlocksAfterFocused(List<Block> blocks,
+      {required int focusOffset}) {
+    final id = _focusedBlockId;
+    final i = id == null
+        ? docCtrl.doc.blocks.length - 1
+        : docCtrl.doc.indexOfBlock(id);
+    docCtrl.spliceBlocks(
+      index: i + 1, before: [], after: blocks, kind: EditKind.blockOp,
+      caretBefore: _snap(editing.selection),
+      caretAfter: CaretSnapshot(blocks[focusOffset].id, 0),
+    );
+    focusBlock(blocks[focusOffset].id);
+  }
+
+  /// Inserts an empty paragraph before/after the focused block — the escape
+  /// hatch around opaque blocks.
+  void insertParagraphBefore() {
+    final id = _focusedBlockId;
+    if (id == null) return;
+    final i = docCtrl.doc.indexOfBlock(id);
+    if (i < 0) return;
+    final p = Block(kind: BlockKind.paragraph, source: '');
+    docCtrl.spliceBlocks(
+      index: i, before: [], after: [p], kind: EditKind.blockOp,
+      caretBefore: _snap(editing.selection), caretAfter: CaretSnapshot(p.id, 0),
+    );
+    focusBlock(p.id);
+  }
+
+  void insertParagraphAfter() =>
+      _insertBlocksAfterFocused([Block(kind: BlockKind.paragraph, source: '')],
+          focusOffset: 0);
+
+  /// Inserts a [rows]×[cols] table (converting an empty focused paragraph,
+  /// otherwise after the focused block) and focuses the first cell.
+  void insertTable(int rows, int cols) {
+    final r = rows.clamp(1, 99);
+    final c = cols.clamp(1, 20);
+    final header = '|${'   |' * c}';
+    final delimiter = '|${' --- |' * c}';
+    final dataRows = List.filled(r, '|${'   |' * c}');
+    final source = [header, delimiter, ...dataRows].join('\n');
+    final block = focusedBlock;
+    if (block != null && block.kind == BlockKind.paragraph &&
+        editing.text.isEmpty) {
+      _convertTo(source, 2);
+      return;
+    }
+    final table = Block(kind: BlockKind.table, source: source);
+    _insertBlocksAfterFocused([table], focusOffset: 0);
+    focusBlock(table.id, offset: 2);
+  }
+
+  // ---- Task status (Paragraph > Task Status) ----
+
+  int _caretLineIndex() {
+    final caret = editing.selection.baseOffset;
+    if (caret <= 0) return 0;
+    return editing.text.substring(0, caret.clamp(0, editing.text.length))
+        .split('\n').length - 1;
+  }
+
+  /// Sets the task checkbox on the caret line; null toggles.
+  void setTaskStatusAtCaret({bool? checked}) {
+    final block = focusedBlock;
+    final id = _focusedBlockId;
+    if (block == null || id == null || block.kind != BlockKind.list) return;
+    final li = _caretLineIndex();
+    final line = editing.text.split('\n')[li];
+    final m = RegExp(r'\[([ xX])\]').firstMatch(line);
+    if (m == null) return;
+    final isChecked = m.group(1) != ' ';
+    final target = checked ?? !isChecked;
+    if (target == isChecked) return;
+    toggleTask(id, li);
+  }
+
+  /// Menu wrappers for list indentation (Tab/Shift+Tab do the same).
+  void indentListItem() {
+    if (focusedBlock?.kind == BlockKind.list) handleTab();
+  }
+
+  void outdentListItem() {
+    if (focusedBlock?.kind == BlockKind.list) handleTab(shift: true);
+  }
+
+  // ---- Move row / block up & down (Edit > Move Row) ----
+
+  /// Moves the caret line within a list/table block, or the whole focused
+  /// block otherwise. [up] chooses the direction.
+  void moveRow({required bool up}) {
+    final block = focusedBlock;
+    final id = _focusedBlockId;
+    if (block == null || id == null) return;
+    if (block.kind == BlockKind.list || block.kind == BlockKind.table) {
+      final lines = editing.text.split('\n');
+      final li = _caretLineIndex();
+      final target = up ? li - 1 : li + 1;
+      // Table: never move the header or across the delimiter row.
+      final minLine = block.kind == BlockKind.table ? 2 : 0;
+      if (li >= minLine && target >= minLine && target < lines.length) {
+        final caretInLine = editing.selection.baseOffset -
+            lines.sublist(0, li).fold<int>(0, (n, l) => n + l.length + 1);
+        final tmp = lines[li];
+        lines[li] = lines[target];
+        lines[target] = tmp;
+        final newText = lines.join('\n');
+        final newCaret = lines.sublist(0, target)
+                .fold<int>(0, (n, l) => n + l.length + 1) +
+            caretInLine.clamp(0, lines[target].length);
+        replaceRange(0, editing.text.length, newText,
+            caretAt: newCaret, kind: EditKind.blockOp);
+        return;
+      }
+      if (block.kind == BlockKind.table) return;
+    }
+    // Whole-block move.
+    final i = docCtrl.doc.indexOfBlock(id);
+    final j = up ? i - 1 : i + 1;
+    if (i < 0 || j < 0 || j >= docCtrl.doc.blocks.length) return;
+    final caret = editing.selection.baseOffset;
+    final neighbour = docCtrl.doc.blocks[j];
+    final lo = up ? j : i;
+    docCtrl.spliceBlocks(
+      index: lo,
+      before: up ? [neighbour, block] : [block, neighbour],
+      after: up ? [block, neighbour] : [neighbour, block],
+      kind: EditKind.blockOp,
+      caretBefore: _snap(editing.selection),
+      caretAfter: CaretSnapshot(id, caret),
+    );
+    focusBlock(id, offset: caret);
+  }
+
   // ---- Undo / redo ----
 
   void undo() => _applyHistory(docCtrl.undo());

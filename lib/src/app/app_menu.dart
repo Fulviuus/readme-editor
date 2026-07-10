@@ -30,6 +30,7 @@ class AppMenuCallbacks {
     required this.quit,
     required this.alwaysOnTop,
     required this.toggleAlwaysOnTop,
+    required this.insertTable,
   });
 
   final VoidCallback about;
@@ -44,6 +45,7 @@ class AppMenuCallbacks {
   final VoidCallback quit;
   final bool alwaysOnTop;
   final VoidCallback toggleAlwaysOnTop;
+  final VoidCallback insertTable;
 }
 
 // ---- macOS: PlatformMenuBar ----
@@ -230,6 +232,22 @@ List<PlatformMenu> buildPlatformMenus({
         PlatformMenuItemGroup(
           members: [
             PlatformMenuItem(
+              label: 'Move Row Up',
+              shortcut: const SingleActivator(LogicalKeyboardKey.arrowUp,
+                  meta: true, control: true),
+              onSelected: () => editor.moveRow(up: true),
+            ),
+            PlatformMenuItem(
+              label: 'Move Row Down',
+              shortcut: const SingleActivator(LogicalKeyboardKey.arrowDown,
+                  meta: true, control: true),
+              onSelected: () => editor.moveRow(up: false),
+            ),
+          ],
+        ),
+        PlatformMenuItemGroup(
+          members: [
+            PlatformMenuItem(
               label: 'Find…',
               shortcut:
                   const SingleActivator(LogicalKeyboardKey.keyF, meta: true),
@@ -237,6 +255,11 @@ List<PlatformMenu> buildPlatformMenus({
             ),
           ],
         ),
+      ],
+    ),
+    PlatformMenu(
+      label: 'Paragraph',
+      menus: [
         PlatformMenuItemGroup(
           members: [
             for (var n = 1; n <= 6; n++)
@@ -251,6 +274,142 @@ List<PlatformMenu> buildPlatformMenus({
               shortcut:
                   const SingleActivator(LogicalKeyboardKey.digit0, meta: true),
               onSelected: () => editor.setHeadingLevel(0),
+            ),
+          ],
+        ),
+        PlatformMenuItemGroup(
+          members: [
+            PlatformMenuItem(
+              label: 'Increase Heading Level',
+              shortcut:
+                  const SingleActivator(LogicalKeyboardKey.equal, meta: true),
+              onSelected: editor.increaseHeadingLevel,
+            ),
+            PlatformMenuItem(
+              label: 'Decrease Heading Level',
+              shortcut:
+                  const SingleActivator(LogicalKeyboardKey.minus, meta: true),
+              onSelected: editor.decreaseHeadingLevel,
+            ),
+          ],
+        ),
+        PlatformMenuItemGroup(
+          members: [
+            PlatformMenuItem(
+              label: 'Insert Table…',
+              shortcut: const SingleActivator(LogicalKeyboardKey.keyT,
+                  meta: true, alt: true),
+              onSelected: actions.insertTable,
+            ),
+            PlatformMenuItem(
+              label: 'Code Fences',
+              shortcut: const SingleActivator(LogicalKeyboardKey.keyC,
+                  meta: true, alt: true),
+              onSelected: editor.convertToCodeFence,
+            ),
+            PlatformMenuItem(
+              label: 'Math Block',
+              shortcut: const SingleActivator(LogicalKeyboardKey.keyB,
+                  meta: true, alt: true),
+              onSelected: editor.convertToMathBlock,
+            ),
+          ],
+        ),
+        PlatformMenuItemGroup(
+          members: [
+            PlatformMenuItem(
+              label: 'Quote',
+              shortcut: const SingleActivator(LogicalKeyboardKey.keyQ,
+                  meta: true, alt: true),
+              onSelected: editor.convertToQuote,
+            ),
+          ],
+        ),
+        PlatformMenuItemGroup(
+          members: [
+            PlatformMenuItem(
+              label: 'Ordered List',
+              shortcut: const SingleActivator(LogicalKeyboardKey.keyO,
+                  meta: true, alt: true),
+              onSelected: editor.convertToOrderedList,
+            ),
+            PlatformMenuItem(
+              label: 'Unordered List',
+              shortcut: const SingleActivator(LogicalKeyboardKey.keyU,
+                  meta: true, alt: true),
+              onSelected: editor.convertToUnorderedList,
+            ),
+            PlatformMenuItem(
+              label: 'Task List',
+              shortcut: const SingleActivator(LogicalKeyboardKey.keyX,
+                  meta: true, alt: true),
+              onSelected: editor.convertToTaskList,
+            ),
+            PlatformMenu(
+              label: 'Task Status',
+              menus: [
+                PlatformMenuItemGroup(
+                  members: [
+                    PlatformMenuItem(
+                      label: 'Toggle Task Status',
+                      onSelected: () => editor.setTaskStatusAtCaret(),
+                    ),
+                    PlatformMenuItem(
+                      label: 'Mark as Complete',
+                      onSelected: () =>
+                          editor.setTaskStatusAtCaret(checked: true),
+                    ),
+                    PlatformMenuItem(
+                      label: 'Mark as Incomplete',
+                      onSelected: () =>
+                          editor.setTaskStatusAtCaret(checked: false),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            PlatformMenu(
+              label: 'List Indentation',
+              menus: [
+                PlatformMenuItemGroup(
+                  members: [
+                    PlatformMenuItem(
+                      label: 'Indent',
+                      onSelected: editor.indentListItem,
+                    ),
+                    PlatformMenuItem(
+                      label: 'Outdent',
+                      onSelected: editor.outdentListItem,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
+        PlatformMenuItemGroup(
+          members: [
+            PlatformMenuItem(
+              label: 'Insert Paragraph Before',
+              onSelected: editor.insertParagraphBefore,
+            ),
+            PlatformMenuItem(
+              label: 'Insert Paragraph After',
+              shortcut:
+                  const SingleActivator(LogicalKeyboardKey.enter, meta: true),
+              onSelected: editor.insertParagraphAfter,
+            ),
+          ],
+        ),
+        PlatformMenuItemGroup(
+          members: [
+            PlatformMenuItem(
+              label: 'Horizontal Line',
+              onSelected: editor.insertHorizontalRule,
+            ),
+            PlatformMenuItem(
+              label: 'YAML Front Matter',
+              onSelected: editor.insertFrontMatter,
             ),
           ],
         ),
@@ -474,11 +633,24 @@ class AppMenuBar extends StatelessWidget {
             ),
             const Divider(height: 8),
             MenuItemButton(
+              onPressed: () => editor.moveRow(up: true),
+              child: const Text('Move Row Up'),
+            ),
+            MenuItemButton(
+              onPressed: () => editor.moveRow(up: false),
+              child: const Text('Move Row Down'),
+            ),
+            const Divider(height: 8),
+            MenuItemButton(
               onPressed: () => editor.findVisible.value = true,
               shortcut: cmd(LogicalKeyboardKey.keyF),
               child: const Text('Find…'),
             ),
-            const Divider(height: 8),
+          ],
+          child: const MenuAcceleratorLabel('&Edit'),
+        ),
+        SubmenuButton(
+          menuChildren: [
             for (var n = 1; n <= 6; n++)
               MenuItemButton(
                 onPressed: () => editor.setHeadingLevel(n),
@@ -491,8 +663,97 @@ class AppMenuBar extends StatelessWidget {
               shortcut: cmd(LogicalKeyboardKey.digit0),
               child: const Text('Paragraph'),
             ),
+            const Divider(height: 8),
+            MenuItemButton(
+              onPressed: editor.increaseHeadingLevel,
+              shortcut: cmd(LogicalKeyboardKey.equal),
+              child: const Text('Increase Heading Level'),
+            ),
+            MenuItemButton(
+              onPressed: editor.decreaseHeadingLevel,
+              shortcut: cmd(LogicalKeyboardKey.minus),
+              child: const Text('Decrease Heading Level'),
+            ),
+            const Divider(height: 8),
+            MenuItemButton(
+              onPressed: actions.insertTable,
+              child: const Text('Insert Table…'),
+            ),
+            MenuItemButton(
+              onPressed: editor.convertToCodeFence,
+              child: const Text('Code Fences'),
+            ),
+            MenuItemButton(
+              onPressed: editor.convertToMathBlock,
+              child: const Text('Math Block'),
+            ),
+            MenuItemButton(
+              onPressed: editor.convertToQuote,
+              child: const Text('Quote'),
+            ),
+            const Divider(height: 8),
+            MenuItemButton(
+              onPressed: editor.convertToOrderedList,
+              child: const Text('Ordered List'),
+            ),
+            MenuItemButton(
+              onPressed: editor.convertToUnorderedList,
+              child: const Text('Unordered List'),
+            ),
+            MenuItemButton(
+              onPressed: editor.convertToTaskList,
+              child: const Text('Task List'),
+            ),
+            SubmenuButton(
+              menuChildren: [
+                MenuItemButton(
+                  onPressed: () => editor.setTaskStatusAtCaret(),
+                  child: const Text('Toggle Task Status'),
+                ),
+                MenuItemButton(
+                  onPressed: () => editor.setTaskStatusAtCaret(checked: true),
+                  child: const Text('Mark as Complete'),
+                ),
+                MenuItemButton(
+                  onPressed: () => editor.setTaskStatusAtCaret(checked: false),
+                  child: const Text('Mark as Incomplete'),
+                ),
+              ],
+              child: const Text('Task Status'),
+            ),
+            SubmenuButton(
+              menuChildren: [
+                MenuItemButton(
+                  onPressed: editor.indentListItem,
+                  child: const Text('Indent'),
+                ),
+                MenuItemButton(
+                  onPressed: editor.outdentListItem,
+                  child: const Text('Outdent'),
+                ),
+              ],
+              child: const Text('List Indentation'),
+            ),
+            const Divider(height: 8),
+            MenuItemButton(
+              onPressed: editor.insertParagraphBefore,
+              child: const Text('Insert Paragraph Before'),
+            ),
+            MenuItemButton(
+              onPressed: editor.insertParagraphAfter,
+              child: const Text('Insert Paragraph After'),
+            ),
+            const Divider(height: 8),
+            MenuItemButton(
+              onPressed: editor.insertHorizontalRule,
+              child: const Text('Horizontal Line'),
+            ),
+            MenuItemButton(
+              onPressed: editor.insertFrontMatter,
+              child: const Text('YAML Front Matter'),
+            ),
           ],
-          child: const MenuAcceleratorLabel('&Edit'),
+          child: const MenuAcceleratorLabel('&Paragraph'),
         ),
         SubmenuButton(
           menuChildren: [
