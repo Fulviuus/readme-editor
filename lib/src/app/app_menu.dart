@@ -188,6 +188,14 @@ List<PlatformMenu> buildPlatformMenus({
                   const SingleActivator(LogicalKeyboardKey.keyK, meta: true),
               onSelected: editor.insertLink,
             ),
+            PlatformMenuItem(
+              label: 'Open Link',
+              onSelected: editor.openLinkAtCaret,
+            ),
+            PlatformMenuItem(
+              label: 'Copy Link Address',
+              onSelected: editor.copyLinkAtCaret,
+            ),
           ],
         ),
         PlatformMenuItemGroup(
@@ -389,6 +397,14 @@ class AppMenuBar extends StatelessWidget {
               onPressed: editor.insertLink,
               shortcut: cmd(LogicalKeyboardKey.keyK),
               child: const Text('Link'),
+            ),
+            MenuItemButton(
+              onPressed: editor.openLinkAtCaret,
+              child: const Text('Open Link'),
+            ),
+            MenuItemButton(
+              onPressed: editor.copyLinkAtCaret,
+              child: const Text('Copy Link Address'),
             ),
             const Divider(height: 8),
             MenuItemButton(

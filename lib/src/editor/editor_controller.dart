@@ -4,6 +4,7 @@
 /// bridging (docs/DESIGN-editor-interaction.md §2, §5, §6).
 library;
 
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter/widgets.dart';
 
 import '../document/block.dart';
@@ -11,6 +12,7 @@ import '../document/block_splitter.dart';
 import '../document/document_controller.dart';
 import '../theme/readme_theme.dart';
 import 'inline_renderer.dart';
+import 'inline_tokenizer.dart';
 import 'markdown_editing_controller.dart';
 
 final _listItemLineRe =
@@ -72,6 +74,40 @@ class EditorController extends ChangeNotifier {
   /// into the document. The shell calls this before saves, exports and
   /// dirty checks so uncommitted source-mode edits are never lost.
   VoidCallback? commitSourceMode;
+
+  /// Installed by the app shell: resolves and opens a link URL (http(s) in
+  /// the browser, relative .md paths in the editor). The editor layer stays
+  /// free of url_launcher / workspace knowledge.
+  ValueChanged<String>? linkOpener;
+
+  /// Opens [url] via the shell's opener (no-op if none installed).
+  void openLink(String url) => linkOpener?.call(url);
+
+  /// URL of the link/autolink at the caret in the focused block, or null.
+  String? linkUrlAtCaret() {
+    final block = focusedBlock;
+    if (block == null) return null;
+    final caret = editing.selection.baseOffset;
+    for (final node in tokenizeInline(editing.text)) {
+      if (caret >= node.start && caret <= node.end) {
+        if (node is LinkNode) return node.url;
+        if (node is AutolinkNode) return node.url;
+      }
+    }
+    return null;
+  }
+
+  /// Edit-menu action: open the link at the caret.
+  void openLinkAtCaret() {
+    final url = linkUrlAtCaret();
+    if (url != null) openLink(url);
+  }
+
+  /// Edit-menu action: copy the address of the link at the caret.
+  void copyLinkAtCaret() {
+    final url = linkUrlAtCaret();
+    if (url != null) Clipboard.setData(ClipboardData(text: url));
+  }
 
   void toggleFocusMode() {
     focusModeEnabled = !focusModeEnabled;

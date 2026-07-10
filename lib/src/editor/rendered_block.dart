@@ -5,6 +5,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderParagraph;
+import 'package:flutter/services.dart';
 
 import '../document/block.dart';
 import '../theme/readme_theme.dart';
@@ -13,6 +14,7 @@ import 'blocks/code_block.dart';
 import 'blocks/list_block.dart';
 import 'blocks/table_block.dart';
 import 'editor_controller.dart';
+import 'inline_renderer.dart' show LinkRange;
 import 'inline_tokenizer.dart';
 import 'offset_runs.dart';
 
@@ -64,6 +66,8 @@ class RenderedBlock extends StatelessWidget {
     return TappableInlineText(
       span: r.span,
       runs: r.runs,
+      links: r.links,
+      onOpenLink: editor.openLink,
       onCaret: _focusAt,
     );
   }
@@ -105,6 +109,8 @@ class RenderedBlock extends StatelessWidget {
     Widget text = TappableInlineText(
       span: r.span,
       runs: runs,
+      links: r.links,
+      onOpenLink: editor.openLink,
       onCaret: _focusAt,
       textAlign: align,
     );
@@ -155,7 +161,13 @@ class RenderedBlock extends StatelessWidget {
           OffsetRun(run.kind, run.rStart, run.rEnd, run.sStart + base,
               run.sEnd + base),
       ];
-      rows.add(TappableInlineText(span: r.span, runs: runs, onCaret: _focusAt));
+      rows.add(TappableInlineText(
+        span: r.span,
+        runs: runs,
+        links: r.links,
+        onOpenLink: editor.openLink,
+        onCaret: _focusAt,
+      ));
       lineStart += line.length + 1;
     }
     return Container(
@@ -220,18 +232,24 @@ class RenderedBlock extends StatelessWidget {
 }
 
 /// RichText that maps a tap to a source offset through its [OffsetRun]s.
+/// Links (via [links]) support Cmd/Ctrl+click to open and a right-click
+/// context menu — a plain click still focuses the block for editing.
 class TappableInlineText extends StatefulWidget {
   const TappableInlineText({
     super.key,
     required this.span,
     required this.runs,
     required this.onCaret,
+    this.links = const [],
+    this.onOpenLink,
     this.textAlign = TextAlign.start,
   });
 
   final InlineSpan span;
   final List<OffsetRun> runs;
   final ValueChanged<int> onCaret;
+  final List<LinkRange> links;
+  final ValueChanged<String>? onOpenLink;
   final TextAlign textAlign;
 
   @override
@@ -241,13 +259,64 @@ class TappableInlineText extends StatefulWidget {
 class _TappableInlineTextState extends State<TappableInlineText> {
   final _textKey = GlobalKey();
 
-  void _onTapUp(TapUpDetails details) {
+  int? _renderedOffsetAt(Offset globalPosition) {
     final render =
         _textKey.currentContext?.findRenderObject() as RenderParagraph?;
-    if (render == null) return;
-    final local = render.globalToLocal(details.globalPosition);
-    final position = render.getPositionForOffset(local);
-    widget.onCaret(renderedToSource(widget.runs, position.offset));
+    if (render == null) return null;
+    final local = render.globalToLocal(globalPosition);
+    return render.getPositionForOffset(local).offset;
+  }
+
+  String? _linkAt(Offset globalPosition) {
+    final r = _renderedOffsetAt(globalPosition);
+    if (r == null) return null;
+    for (final link in widget.links) {
+      if (link.contains(r)) return link.url;
+    }
+    return null;
+  }
+
+  void _onTapUp(TapUpDetails details) {
+    final modified = HardwareKeyboard.instance.isMetaPressed ||
+        HardwareKeyboard.instance.isControlPressed;
+    if (modified && widget.onOpenLink != null) {
+      final url = _linkAt(details.globalPosition);
+      if (url != null) {
+        widget.onOpenLink!(url);
+        return;
+      }
+    }
+    final r = _renderedOffsetAt(details.globalPosition);
+    if (r == null) return;
+    widget.onCaret(renderedToSource(widget.runs, r));
+  }
+
+  Future<void> _onSecondaryTapUp(TapUpDetails details) async {
+    final url = _linkAt(details.globalPosition);
+    if (url == null) return;
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (overlay == null) return;
+    final position = RelativeRect.fromRect(
+      details.globalPosition & const Size(1, 1),
+      Offset.zero & overlay.size,
+    );
+    final action = await showMenu<String>(
+      context: context,
+      position: position,
+      items: const [
+        PopupMenuItem(value: 'open', child: Text('Open Link')),
+        PopupMenuItem(value: 'copy', child: Text('Copy Link Address')),
+      ],
+    );
+    switch (action) {
+      case 'open':
+        widget.onOpenLink?.call(url);
+      case 'copy':
+        await Clipboard.setData(ClipboardData(text: url));
+      default:
+        break;
+    }
   }
 
   @override
@@ -255,6 +324,7 @@ class _TappableInlineTextState extends State<TappableInlineText> {
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTapUp: _onTapUp,
+      onSecondaryTapUp: widget.links.isEmpty ? null : _onSecondaryTapUp,
       child: RichText(
         key: _textKey,
         text: widget.span,

@@ -19,10 +19,25 @@ import 'inline_tokenizer.dart';
 import 'offset_runs.dart';
 
 class InlineRenderResult {
-  const InlineRenderResult(this.span, this.renderedText, this.runs);
+  const InlineRenderResult(this.span, this.renderedText, this.runs, this.links);
   final InlineSpan span;
   final String renderedText;
   final List<OffsetRun> runs;
+
+  /// Hyperlink hotspots in RENDERED-text coordinates (same space as the
+  /// runs' r-offsets) — used for Cmd+click / context-menu link actions.
+  final List<LinkRange> links;
+}
+
+/// A clickable link region within one rendered text region.
+class LinkRange {
+  const LinkRange(this.rStart, this.rEnd, this.url);
+  final int rStart;
+  final int rEnd;
+  final String url;
+
+  bool contains(int renderedOffset) =>
+      renderedOffset >= rStart && renderedOffset < rEnd;
 }
 
 /// Provides a widget for an image URL (injected by the app so the editor
@@ -46,11 +61,13 @@ class InlineRenderer {
     final nodes = tokenizeInline(source);
     final rb = RunBuilder();
     final text = StringBuffer();
-    final children = _renderNodes(source, nodes, baseStyle, rb, text);
+    final links = <LinkRange>[];
+    final children = _renderNodes(source, nodes, baseStyle, rb, text, links);
     return InlineRenderResult(
       TextSpan(style: baseStyle, children: children),
       text.toString(),
       rb.runs,
+      links,
     );
   }
 
@@ -60,6 +77,7 @@ class InlineRenderer {
     TextStyle style,
     RunBuilder rb,
     StringBuffer out,
+    List<LinkRange> links,
   ) {
     final spans = <InlineSpan>[];
 
@@ -92,12 +110,16 @@ class InlineRenderer {
             if (node.isStrong) st = st.copyWith(fontWeight: FontWeight.w700);
             if (node.isEmphasis) st = st.copyWith(fontStyle: FontStyle.italic);
           }
-          spans.addAll(_renderNodes(s, node.children, st, rb, out));
+          spans.addAll(_renderNodes(s, node.children, st, rb, out, links));
           rb.hidden(node.end - node.delimiterLength, node.end);
         case LinkNode():
           rb.hidden(node.start, node.labelStart);
           final st = style.merge(theme.linkStyle);
-          spans.addAll(_renderNodes(s, node.children, st, rb, out));
+          final linkStart = rb.renderedLength;
+          spans.addAll(_renderNodes(s, node.children, st, rb, out, links));
+          if (rb.renderedLength > linkStart) {
+            links.add(LinkRange(linkStart, rb.renderedLength, node.url));
+          }
           rb.hidden(node.labelEnd, node.end);
         case ImageNode():
           final w = imageBuilder?.call(node.url, node.alt);
@@ -111,8 +133,10 @@ class InlineRenderer {
           }
         case AutolinkNode():
           if (node.bracketed) rb.hidden(node.start, node.contentStart);
+          final autoStart = rb.renderedLength;
           emitText(node.contentStart, node.contentEnd,
               style.merge(theme.linkStyle));
+          links.add(LinkRange(autoStart, rb.renderedLength, node.url));
           if (node.bracketed) rb.hidden(node.contentEnd, node.end);
         case HtmlTagNode():
           emitText(node.start, node.end,

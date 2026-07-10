@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../document/document_controller.dart';
 import '../editor/editor_controller.dart';
@@ -56,6 +57,7 @@ class _HomeShellState extends State<HomeShell> {
     _themeManager = context.read<ThemeManager>();
     _doc.addListener(_syncWindowTitle);
     _syncWindowTitle();
+    _editor.linkOpener = (url) => _openLink(url);
     if (!kIsWeb) {
       setPreventCloseEnabled(true);
       setWindowCloseHandler(_handleWindowClose);
@@ -64,6 +66,7 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   void dispose() {
+    _editor.linkOpener = null;
     _doc.removeListener(_syncWindowTitle);
     if (!kIsWeb) {
       setWindowCloseHandler(null);
@@ -176,6 +179,31 @@ class _HomeShellState extends State<HomeShell> {
   void _prepareForDocumentSwitch() {
     _editor.commitSourceMode?.call();
     _editor.sourceModeEnabled.value = false;
+  }
+
+  /// Opens a link from the document: web/mailto URLs in the browser,
+  /// relative markdown paths in the editor (confirm-if-dirty first), other
+  /// local paths with the system default app.
+  Future<void> _openLink(String url) async {
+    final uri = Uri.tryParse(url);
+    final scheme = uri?.scheme ?? '';
+    if (scheme == 'http' || scheme == 'https' || scheme == 'mailto') {
+      await launchUrl(uri!);
+      return;
+    }
+    // Relative or file path: resolve against the open document's folder.
+    var path = url;
+    if (scheme == 'file') path = uri!.toFilePath();
+    if (!p.isAbsolute(path) && _doc.filePath != null) {
+      path = p.normalize(p.join(p.dirname(_doc.filePath!), path));
+    }
+    final lower = path.toLowerCase();
+    if (lower.endsWith('.md') || lower.endsWith('.markdown') ||
+        lower.endsWith('.txt')) {
+      await _openPath(path);
+      return;
+    }
+    await launchUrl(Uri.file(path));
   }
 
   Future<void> _newFile() async {

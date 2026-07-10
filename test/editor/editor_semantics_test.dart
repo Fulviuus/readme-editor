@@ -437,6 +437,29 @@ void main() {
     });
   });
 
+  group('link actions (issue #38)', () {
+    test('linkUrlAtCaret finds the link under the caret', () {
+      doc.loadText('see [docs](https://x.dev) and https://a.b end');
+      final id = doc.doc.blocks.first.id;
+      editor.focusBlock(id, offset: 7); // inside [docs]
+      expect(editor.linkUrlAtCaret(), 'https://x.dev');
+      editor.focusBlock(id, offset: 33); // inside the bare autolink
+      expect(editor.linkUrlAtCaret(), 'https://a.b');
+      editor.focusBlock(id, offset: 0); // plain text
+      expect(editor.linkUrlAtCaret(), isNull);
+    });
+
+    test('openLink dispatches to the installed opener', () {
+      final opened = <String>[];
+      editor.linkOpener = opened.add;
+      editor.openLink('https://x.dev');
+      doc.loadText('[a](https://caret.dev)');
+      editor.focusBlock(doc.doc.blocks.first.id, offset: 2);
+      editor.openLinkAtCaret();
+      expect(opened, ['https://x.dev', 'https://caret.dev']);
+    });
+  });
+
   group('tables', () {
     test('Tab selects the next cell content', () {
       doc.loadText('| a | b |\n|---|---|\n| c | d |');

@@ -91,6 +91,27 @@ void main() {
       expect(res.renderedText, 'see docs now');
     });
 
+    test('link ranges cover labels and autolinks in rendered coords', () {
+      const src = 'see [docs](https://x.dev) or https://a.b now';
+      final res = r.renderInline(src, baseStyle: base);
+      // rendered: 'see docs or https://a.b now'
+      expect(res.links, hasLength(2));
+      final label = res.links[0];
+      expect(res.renderedText.substring(label.rStart, label.rEnd), 'docs');
+      expect(label.url, 'https://x.dev');
+      final auto = res.links[1];
+      expect(res.renderedText.substring(auto.rStart, auto.rEnd),
+          'https://a.b');
+      expect(auto.url, 'https://a.b');
+      expect(label.contains(label.rStart), isTrue);
+      expect(label.contains(label.rEnd), isFalse);
+    });
+
+    test('bold text produces no link ranges', () {
+      final res = r.renderInline('**no links here**', baseStyle: base);
+      expect(res.links, isEmpty);
+    });
+
     test('image without builder falls back to alt-ish text', () {
       const src = '![alt](u.png)';
       final res = r.renderInline(src, baseStyle: base);

@@ -124,6 +124,8 @@ class ListBlockView extends StatelessWidget {
             child: TappableInlineText(
               span: r.span,
               runs: runs,
+              links: r.links,
+              onOpenLink: editor.openLink,
               onCaret: (offset) => editor.focusBlock(block.id, offset: offset),
             ),
           ),

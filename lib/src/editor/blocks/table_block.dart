@@ -96,6 +96,8 @@ class TableBlockView extends StatelessWidget {
         child: TappableInlineText(
           span: r.span,
           runs: runs,
+          links: r.links,
+          onOpenLink: editor.openLink,
           textAlign: align,
           onCaret: (offset) => editor.focusBlock(block.id, offset: offset),
         ),
