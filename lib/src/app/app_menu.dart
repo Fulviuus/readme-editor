@@ -12,6 +12,7 @@ import 'package:path/path.dart' as p;
 import '../editor/editor_controller.dart';
 import '../theme/theme_manager.dart';
 import '../workspace/workspace_controller.dart';
+import 'platform/window_support.dart';
 
 /// Shell-owned menu actions. File actions already run the confirm-if-dirty
 /// flow; editor/theme actions are invoked directly on the controllers.
@@ -27,6 +28,8 @@ class AppMenuCallbacks {
     required this.exportHtml,
     required this.toggleSidebar,
     required this.quit,
+    required this.alwaysOnTop,
+    required this.toggleAlwaysOnTop,
   });
 
   final VoidCallback about;
@@ -39,6 +42,8 @@ class AppMenuCallbacks {
   final VoidCallback exportHtml;
   final VoidCallback toggleSidebar;
   final VoidCallback quit;
+  final bool alwaysOnTop;
+  final VoidCallback toggleAlwaysOnTop;
 }
 
 // ---- macOS: PlatformMenuBar ----
@@ -59,6 +64,30 @@ List<PlatformMenu> buildPlatformMenus({
         PlatformMenuItemGroup(
           members: [
             PlatformMenuItem(label: 'About readme', onSelected: actions.about),
+          ],
+        ),
+        if (PlatformProvidedMenuItem.hasMenu(
+            PlatformProvidedMenuItemType.servicesSubmenu))
+          const PlatformMenuItemGroup(
+            members: [
+              PlatformProvidedMenuItem(
+                  type: PlatformProvidedMenuItemType.servicesSubmenu),
+            ],
+          ),
+        PlatformMenuItemGroup(
+          members: [
+            if (PlatformProvidedMenuItem.hasMenu(
+                PlatformProvidedMenuItemType.hide))
+              const PlatformProvidedMenuItem(
+                  type: PlatformProvidedMenuItemType.hide),
+            if (PlatformProvidedMenuItem.hasMenu(
+                PlatformProvidedMenuItemType.hideOtherApplications))
+              const PlatformProvidedMenuItem(
+                  type: PlatformProvidedMenuItemType.hideOtherApplications),
+            if (PlatformProvidedMenuItem.hasMenu(
+                PlatformProvidedMenuItemType.showAllApplications))
+              const PlatformProvidedMenuItem(
+                  type: PlatformProvidedMenuItemType.showAllApplications),
           ],
         ),
         // Deliberately NOT PlatformProvidedMenuItemType.quit: that
@@ -273,6 +302,43 @@ List<PlatformMenu> buildPlatformMenus({
             ),
           ],
         ),
+        PlatformMenuItemGroup(
+          members: [
+            PlatformMenuItem(
+              label: actions.alwaysOnTop ? '✓ Always on Top' : 'Always on Top',
+              onSelected: actions.toggleAlwaysOnTop,
+            ),
+          ],
+        ),
+      ],
+    ),
+    PlatformMenu(
+      label: 'Window',
+      menus: [
+        PlatformMenuItemGroup(
+          members: [
+            if (PlatformProvidedMenuItem.hasMenu(
+                PlatformProvidedMenuItemType.minimizeWindow))
+              const PlatformProvidedMenuItem(
+                  type: PlatformProvidedMenuItemType.minimizeWindow),
+            if (PlatformProvidedMenuItem.hasMenu(
+                PlatformProvidedMenuItemType.zoomWindow))
+              const PlatformProvidedMenuItem(
+                  type: PlatformProvidedMenuItemType.zoomWindow),
+          ],
+        ),
+        PlatformMenuItemGroup(
+          members: [
+            if (PlatformProvidedMenuItem.hasMenu(
+                PlatformProvidedMenuItemType.toggleFullScreen))
+              const PlatformProvidedMenuItem(
+                  type: PlatformProvidedMenuItemType.toggleFullScreen),
+            if (PlatformProvidedMenuItem.hasMenu(
+                PlatformProvidedMenuItemType.arrangeWindowsInFront))
+              const PlatformProvidedMenuItem(
+                  type: PlatformProvidedMenuItemType.arrangeWindowsInFront),
+          ],
+        ),
       ],
     ),
   ];
@@ -460,8 +526,35 @@ class AppMenuBar extends StatelessWidget {
               ],
               child: const Text('Themes'),
             ),
+            const Divider(height: 8),
+            MenuItemButton(
+              leadingIcon: actions.alwaysOnTop
+                  ? const Icon(Icons.check, size: 16)
+                  : const SizedBox(width: 16),
+              onPressed: actions.toggleAlwaysOnTop,
+              child: const Text('Always on Top'),
+            ),
           ],
           child: const MenuAcceleratorLabel('&View'),
+        ),
+        SubmenuButton(
+          menuChildren: [
+            MenuItemButton(
+              onPressed: minimizeWindow,
+              child: const Text('Minimize'),
+            ),
+            MenuItemButton(
+              onPressed: zoomWindow,
+              child: const Text('Zoom'),
+            ),
+            const Divider(height: 8),
+            MenuItemButton(
+              onPressed: toggleFullScreenWindow,
+              shortcut: const SingleActivator(LogicalKeyboardKey.f11),
+              child: const Text('Full Screen'),
+            ),
+          ],
+          child: const MenuAcceleratorLabel('&Window'),
         ),
       ],
     );

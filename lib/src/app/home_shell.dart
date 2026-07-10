@@ -45,6 +45,7 @@ class _HomeShellState extends State<HomeShell> {
   late final ThemeManager _themeManager;
 
   bool _sidebarVisible = true;
+  bool _alwaysOnTop = false;
   _SidebarTab _sidebarTab = _SidebarTab.files;
   String? _windowTitle;
 
@@ -253,6 +254,11 @@ class _HomeShellState extends State<HomeShell> {
 
   void _toggleSidebar() => setState(() => _sidebarVisible = !_sidebarVisible);
 
+  void _toggleAlwaysOnTop() {
+    setState(() => _alwaysOnTop = !_alwaysOnTop);
+    if (!kIsWeb) setWindowAlwaysOnTop(_alwaysOnTop);
+  }
+
   void _showAbout() {
     showAboutDialog(
       context: context,
@@ -275,6 +281,8 @@ class _HomeShellState extends State<HomeShell> {
         exportHtml: _exportHtml,
         toggleSidebar: _toggleSidebar,
         quit: _quit,
+        alwaysOnTop: _alwaysOnTop,
+        toggleAlwaysOnTop: _toggleAlwaysOnTop,
       );
 
   /// Shell-level shortcuts for platforms without a native menu bar. The

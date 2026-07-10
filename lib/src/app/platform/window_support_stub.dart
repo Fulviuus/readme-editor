@@ -16,3 +16,15 @@ void setWindowCloseHandler(Future<void> Function()? handler) {}
 
 /// Destroys the window, bypassing the close handler (no-op on web).
 Future<void> destroyWindow() async {}
+
+/// Pins the window above all others (no-op on web).
+Future<void> setWindowAlwaysOnTop(bool enabled) async {}
+
+/// Minimizes the window (no-op on web).
+Future<void> minimizeWindow() async {}
+
+/// Zooms/maximizes the window (no-op on web).
+Future<void> zoomWindow() async {}
+
+/// Toggles full screen (no-op on web).
+Future<void> toggleFullScreenWindow() async {}

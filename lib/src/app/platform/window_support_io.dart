@@ -63,3 +63,31 @@ class _CloseListener with WindowListener {
     handler();
   }
 }
+
+/// Pins the window above all others (View > Always on Top).
+Future<void> setWindowAlwaysOnTop(bool enabled) async {
+  if (!_isDesktop) return;
+  await windowManager.setAlwaysOnTop(enabled);
+}
+
+/// Minimizes the window (Window > Minimize on non-macOS menus).
+Future<void> minimizeWindow() async {
+  if (!_isDesktop) return;
+  await windowManager.minimize();
+}
+
+/// Zooms/maximizes the window (Window > Zoom on non-macOS menus).
+Future<void> zoomWindow() async {
+  if (!_isDesktop) return;
+  if (await windowManager.isMaximized()) {
+    await windowManager.unmaximize();
+  } else {
+    await windowManager.maximize();
+  }
+}
+
+/// Toggles full screen (View > Full Screen on non-macOS menus).
+Future<void> toggleFullScreenWindow() async {
+  if (!_isDesktop) return;
+  await windowManager.setFullScreen(!await windowManager.isFullScreen());
+}
