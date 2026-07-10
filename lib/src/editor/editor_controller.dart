@@ -1451,6 +1451,109 @@ class EditorController extends ChangeNotifier {
     focusBlock(table.id, offset: 2);
   }
 
+  /// Converts the focused block into a GitHub-style alert quote
+  /// (`> [!NOTE]` …). [type] is NOTE/TIP/IMPORTANT/WARNING/CAUTION.
+  void convertToAlert(String type) {
+    final block = focusedBlock;
+    if (block == null) return;
+    final body = block.kind == BlockKind.blockquote
+        ? _stripBlockMarkers(editing.text)
+        : editing.text;
+    // Replace an existing alert tag instead of stacking a second one.
+    final lines = body.split('\n');
+    if (lines.isNotEmpty &&
+        RegExp(r'^\[!\w+\]\s*$').hasMatch(lines.first.trim())) {
+      lines.removeAt(0);
+      if (lines.isNotEmpty && lines.first.trim().isEmpty) lines.removeAt(0);
+    }
+    final content = lines.join('\n');
+    final quoted = [
+      '> [!$type]',
+      for (final l in content.split('\n')) '> $l',
+    ].join('\n');
+    _convertTo(quoted, quoted.length);
+  }
+
+  /// Strips inline formatting (markers, code ticks, link syntax, HTML tags)
+  /// from the selection — or the whole block when the caret is collapsed.
+  void clearFormat() {
+    final block = focusedBlock;
+    if (block == null) return;
+    var sel = editing.selection;
+    if (!sel.isValid) return;
+    if (sel.isCollapsed) {
+      sel = TextSelection(baseOffset: 0, extentOffset: editing.text.length);
+    }
+    final slice = editing.text.substring(sel.start, sel.end);
+    final plain = plainTextOfInline(slice);
+    if (plain == slice) return;
+    replaceRange(sel.start, sel.end, plain, kind: EditKind.blockOp);
+  }
+
+  /// Toggles `<u>…</u>` underline around the selection (Cmd+U).
+  void toggleUnderline() {
+    final block = focusedBlock;
+    if (block == null) return;
+    final text = editing.text;
+    final sel = editing.selection;
+    if (!sel.isValid) return;
+    const open = '<u>';
+    const close = '</u>';
+    if (sel.isCollapsed) {
+      replaceRange(sel.baseOffset, sel.baseOffset, '$open$close',
+          caretAt: sel.baseOffset + open.length);
+      return;
+    }
+    final a = sel.start;
+    final b = sel.end;
+    bool has(int at, String s) =>
+        at >= 0 && at + s.length <= text.length &&
+        text.substring(at, at + s.length).toLowerCase() == s;
+    if (has(a - open.length, open) && has(b, close)) {
+      final newText =
+          text.replaceRange(b, b + close.length, '').replaceRange(
+              a - open.length, a, '');
+      _replaceAllText(newText,
+          TextSelection(baseOffset: a - open.length, extentOffset: b - open.length));
+      return;
+    }
+    final inner = text.substring(a, b);
+    if (inner.toLowerCase().startsWith(open) &&
+        inner.toLowerCase().endsWith(close) &&
+        inner.length >= open.length + close.length) {
+      final stripped =
+          inner.substring(open.length, inner.length - close.length);
+      replaceRange(a, b, stripped, kind: EditKind.blockOp);
+      return;
+    }
+    final newText =
+        text.replaceRange(b, b, close).replaceRange(a, a, open);
+    _replaceAllText(newText,
+        TextSelection(baseOffset: a + open.length, extentOffset: b + open.length));
+  }
+
+  /// View > Typewriter Mode: keeps the caret line vertically centered
+  /// (EditingBlock drives the scrolling; EditorView pads the list).
+  void toggleTypewriterMode() {
+    typewriterModeEnabled = !typewriterModeEnabled;
+    notifyListeners();
+  }
+
+  /// Vertical offset of the caret inside the focused block's text, for the
+  /// typewriter-mode scroll policy.
+  double caretDyInFocusedBlock() {
+    final block = focusedBlock;
+    if (block == null) return 0;
+    final tp = _layoutFor(editing.text, block.kind,
+        headingLevel: block.headingLevel);
+    final dy = tp
+        .getOffsetForCaret(
+            TextPosition(offset: editing.selection.baseOffset), Rect.zero)
+        .dy;
+    tp.dispose();
+    return dy;
+  }
+
   // ---- Task status (Paragraph > Task Status) ----
 
   int _caretLineIndex() {

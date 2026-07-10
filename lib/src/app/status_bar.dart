@@ -54,9 +54,30 @@ class StatusBar extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Text(
-                '${count.words} words · ${count.characters} characters',
-                style: style,
+              // Click for the word-count popover (reading time & friends).
+              MenuAnchor(
+                alignmentOffset: const Offset(0, -8),
+                menuChildren: [
+                  for (final line in [
+                    '${count.words} words',
+                    '${count.characters} characters',
+                    '${docCtrl.doc.blocks.length} blocks',
+                    '~${count.readingMinutes} min read',
+                  ])
+                    MenuItemButton(
+                      onPressed: null,
+                      child: Text(line, style: TextStyle(color: fg)),
+                    ),
+                ],
+                builder: (context, controller, _) => InkWell(
+                  onTap: () => controller.isOpen
+                      ? controller.close()
+                      : controller.open(),
+                  child: Text(
+                    '${count.words} words · ${count.characters} characters',
+                    style: style,
+                  ),
+                ),
               ),
               if (crumbs.isNotEmpty) ...[
                 const SizedBox(width: 16),

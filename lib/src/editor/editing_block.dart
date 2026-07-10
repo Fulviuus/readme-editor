@@ -29,8 +29,33 @@ class _EditingBlockState extends State<EditingBlock> {
   @override
   void initState() {
     super.initState();
+    widget.editor.editing.addListener(_onEditingChangedForTypewriter);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _revealIfOffscreen();
+    });
+  }
+
+  /// Typewriter mode: keep the caret line vertically centered while typing
+  /// or moving the caret (docs/DESIGN-editor-interaction.md §9).
+  void _onEditingChangedForTypewriter() {
+    if (!widget.editor.typewriterModeEnabled) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final render = context.findRenderObject();
+      final viewport =
+          render == null ? null : RenderAbstractViewport.maybeOf(render);
+      final scrollable = Scrollable.maybeOf(context);
+      if (render == null || viewport == null || scrollable == null) return;
+      final position = scrollable.position;
+      final blockTop = viewport.getOffsetToReveal(render, 0.0).offset;
+      final caretDy = widget.editor.caretDyInFocusedBlock();
+      final lineHalf = widget.editor.theme.fontSize * 0.75;
+      final target = (blockTop + caretDy + lineHalf -
+              position.viewportDimension / 2)
+          .clamp(position.minScrollExtent, position.maxScrollExtent);
+      if ((target - position.pixels).abs() < 2) return;
+      position.animateTo(target,
+          duration: const Duration(milliseconds: 80), curve: Curves.easeOut);
     });
   }
 
@@ -61,6 +86,7 @@ class _EditingBlockState extends State<EditingBlock> {
 
   @override
   void dispose() {
+    widget.editor.editing.removeListener(_onEditingChangedForTypewriter);
     _fieldUndo.dispose();
     super.dispose();
   }

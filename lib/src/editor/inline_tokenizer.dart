@@ -94,6 +94,38 @@ bool _isAlnum(String c) => RegExp(r'[a-zA-Z0-9]').hasMatch(c);
 
 List<InlineNode> tokenizeInline(String s) => _parse(s, 0, s.length);
 
+/// The rendered plain text of [s] with all inline syntax stripped: markers
+/// gone, code/link labels kept, image alt kept, HTML tags dropped.
+/// Used by Clear Format and copy-as-plain-text.
+String plainTextOfInline(String s) {
+  final buf = StringBuffer();
+  void walk(List<InlineNode> nodes) {
+    for (final n in nodes) {
+      switch (n) {
+        case TextNode():
+          buf.write(s.substring(n.start, n.end));
+        case EscapeNode():
+          buf.write(s.substring(n.start + 1, n.end));
+        case CodeNode():
+          buf.write(s.substring(n.contentStart, n.contentEnd));
+        case EmphasisNode():
+          walk(n.children);
+        case LinkNode():
+          walk(n.children);
+        case ImageNode():
+          buf.write(n.alt);
+        case AutolinkNode():
+          buf.write(n.url);
+        case HtmlTagNode():
+          break;
+      }
+    }
+  }
+
+  walk(tokenizeInline(s));
+  return buf.toString();
+}
+
 List<InlineNode> _parse(String s, int from, int to) {
   final nodes = <InlineNode>[];
   var i = from;

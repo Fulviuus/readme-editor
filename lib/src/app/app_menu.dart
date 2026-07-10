@@ -276,6 +276,12 @@ List<PlatformMenu> buildPlatformMenus({
               onSelected: editor.toggleStrikethrough,
             ),
             PlatformMenuItem(
+              label: 'Underline',
+              shortcut:
+                  const SingleActivator(LogicalKeyboardKey.keyU, meta: true),
+              onSelected: editor.toggleUnderline,
+            ),
+            PlatformMenuItem(
               label: 'Link',
               shortcut:
                   const SingleActivator(LogicalKeyboardKey.keyK, meta: true),
@@ -288,6 +294,12 @@ List<PlatformMenu> buildPlatformMenus({
             PlatformMenuItem(
               label: 'Copy Link Address',
               onSelected: editor.copyLinkAtCaret,
+            ),
+            PlatformMenuItem(
+              label: 'Clear Format',
+              shortcut: const SingleActivator(LogicalKeyboardKey.backslash,
+                  meta: true),
+              onSelected: editor.clearFormat,
             ),
           ],
         ),
@@ -417,6 +429,26 @@ List<PlatformMenu> buildPlatformMenus({
                   meta: true, alt: true),
               onSelected: editor.convertToQuote,
             ),
+            PlatformMenu(
+              label: 'Alert',
+              menus: [
+                PlatformMenuItemGroup(
+                  members: [
+                    for (final (type, label) in [
+                      ('NOTE', 'Note Block'),
+                      ('TIP', 'Tip Block'),
+                      ('IMPORTANT', 'Important Block'),
+                      ('WARNING', 'Warning Block'),
+                      ('CAUTION', 'Caution Block'),
+                    ])
+                      PlatformMenuItem(
+                        label: label,
+                        onSelected: () => editor.convertToAlert(type),
+                      ),
+                  ],
+                ),
+              ],
+            ),
           ],
         ),
         PlatformMenuItemGroup(
@@ -531,9 +563,17 @@ List<PlatformMenu> buildPlatformMenus({
               onSelected: editor.toggleSourceMode,
             ),
             PlatformMenuItem(
-              label: 'Focus Mode',
+              label:
+                  editor.focusModeEnabled ? '✓ Focus Mode' : '   Focus Mode',
               shortcut: const SingleActivator(LogicalKeyboardKey.f8),
               onSelected: editor.toggleFocusMode,
+            ),
+            PlatformMenuItem(
+              label: editor.typewriterModeEnabled
+                  ? '✓ Typewriter Mode'
+                  : '   Typewriter Mode',
+              shortcut: const SingleActivator(LogicalKeyboardKey.f9),
+              onSelected: editor.toggleTypewriterMode,
             ),
           ],
         ),
@@ -751,6 +791,11 @@ class AppMenuBar extends StatelessWidget {
               child: const Text('Strikethrough'),
             ),
             MenuItemButton(
+              onPressed: editor.toggleUnderline,
+              shortcut: cmd(LogicalKeyboardKey.keyU),
+              child: const Text('Underline'),
+            ),
+            MenuItemButton(
               onPressed: editor.insertLink,
               shortcut: cmd(LogicalKeyboardKey.keyK),
               child: const Text('Link'),
@@ -762,6 +807,11 @@ class AppMenuBar extends StatelessWidget {
             MenuItemButton(
               onPressed: editor.copyLinkAtCaret,
               child: const Text('Copy Link Address'),
+            ),
+            MenuItemButton(
+              onPressed: editor.clearFormat,
+              shortcut: cmd(LogicalKeyboardKey.backslash),
+              child: const Text('Clear Format'),
             ),
             const Divider(height: 8),
             SubmenuButton(
@@ -852,6 +902,22 @@ class AppMenuBar extends StatelessWidget {
               onPressed: editor.convertToQuote,
               child: const Text('Quote'),
             ),
+            SubmenuButton(
+              menuChildren: [
+                for (final (type, label) in [
+                  ('NOTE', 'Note Block'),
+                  ('TIP', 'Tip Block'),
+                  ('IMPORTANT', 'Important Block'),
+                  ('WARNING', 'Warning Block'),
+                  ('CAUTION', 'Caution Block'),
+                ])
+                  MenuItemButton(
+                    onPressed: () => editor.convertToAlert(type),
+                    child: Text(label),
+                  ),
+              ],
+              child: const Text('Alert'),
+            ),
             const Divider(height: 8),
             MenuItemButton(
               onPressed: editor.convertToOrderedList,
@@ -932,7 +998,18 @@ class AppMenuBar extends StatelessWidget {
             MenuItemButton(
               onPressed: editor.toggleFocusMode,
               shortcut: const SingleActivator(LogicalKeyboardKey.f8),
+              leadingIcon: editor.focusModeEnabled
+                  ? const Icon(Icons.check, size: 16)
+                  : const SizedBox(width: 16),
               child: const Text('Focus Mode'),
+            ),
+            MenuItemButton(
+              onPressed: editor.toggleTypewriterMode,
+              shortcut: const SingleActivator(LogicalKeyboardKey.f9),
+              leadingIcon: editor.typewriterModeEnabled
+                  ? const Icon(Icons.check, size: 16)
+                  : const SizedBox(width: 16),
+              child: const Text('Typewriter Mode'),
             ),
             const Divider(height: 8),
             SubmenuButton(

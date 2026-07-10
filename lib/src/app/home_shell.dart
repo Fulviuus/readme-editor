@@ -394,8 +394,10 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<ThemeManager>().current;
-    // Rebuild menus when the workspace (recent files, tree) changes.
+    // Rebuild menus when the workspace (recent files, tree) or editor modes
+    // (focus/typewriter checkmarks) change.
     context.watch<WorkspaceController>();
+    context.watch<EditorController>();
     final isMacOS = !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
 
     Widget shell = Column(

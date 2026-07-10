@@ -71,6 +71,9 @@ class InlineRenderer {
     );
   }
 
+  static final _uOpenRe = RegExp(r'^<u\s*>$', caseSensitive: false);
+  static final _uCloseRe = RegExp(r'^</u\s*>$', caseSensitive: false);
+
   List<InlineSpan> _renderNodes(
     String s,
     List<InlineNode> nodes,
@@ -80,6 +83,11 @@ class InlineRenderer {
     List<LinkRange> links,
   ) {
     final spans = <InlineSpan>[];
+    // <u>…</u> spans toggle underline for the nodes between the tags.
+    var underline = 0;
+    TextStyle active() => underline > 0
+        ? style.copyWith(decoration: TextDecoration.underline)
+        : style;
 
     void emitText(int start, int end, TextStyle st) {
       if (end <= start) return;
@@ -92,10 +100,10 @@ class InlineRenderer {
     for (final node in nodes) {
       switch (node) {
         case TextNode():
-          emitText(node.start, node.end, style);
+          emitText(node.start, node.end, active());
         case EscapeNode():
           rb.hidden(node.start, node.start + 1);
-          emitText(node.start + 1, node.end, style);
+          emitText(node.start + 1, node.end, active());
         case CodeNode():
           rb.hidden(node.start, node.contentStart);
           emitText(node.contentStart, node.contentEnd,
@@ -103,7 +111,7 @@ class InlineRenderer {
           rb.hidden(node.contentEnd, node.end);
         case EmphasisNode():
           rb.hidden(node.start, node.start + node.delimiterLength);
-          var st = style;
+          var st = active();
           if (node.isStrikethrough) {
             st = st.copyWith(decoration: TextDecoration.lineThrough);
           } else {
@@ -114,7 +122,7 @@ class InlineRenderer {
           rb.hidden(node.end - node.delimiterLength, node.end);
         case LinkNode():
           rb.hidden(node.start, node.labelStart);
-          final st = style.merge(theme.linkStyle);
+          final st = active().merge(theme.linkStyle);
           final linkStart = rb.renderedLength;
           spans.addAll(_renderNodes(s, node.children, st, rb, out, links));
           if (rb.renderedLength > linkStart) {
@@ -135,12 +143,21 @@ class InlineRenderer {
           if (node.bracketed) rb.hidden(node.start, node.contentStart);
           final autoStart = rb.renderedLength;
           emitText(node.contentStart, node.contentEnd,
-              style.merge(theme.linkStyle));
+              active().merge(theme.linkStyle));
           links.add(LinkRange(autoStart, rb.renderedLength, node.url));
           if (node.bracketed) rb.hidden(node.contentEnd, node.end);
         case HtmlTagNode():
-          emitText(node.start, node.end,
-              style.copyWith(color: theme.syntaxMarkerColor));
+          final tag = s.substring(node.start, node.end);
+          if (_uOpenRe.hasMatch(tag)) {
+            underline++;
+            rb.hidden(node.start, node.end);
+          } else if (_uCloseRe.hasMatch(tag)) {
+            if (underline > 0) underline--;
+            rb.hidden(node.start, node.end);
+          } else {
+            emitText(node.start, node.end,
+                style.copyWith(color: theme.syntaxMarkerColor));
+          }
       }
     }
     return spans;
@@ -209,6 +226,10 @@ class InlineRenderer {
     final nodes = _parseSlice(s, from, to);
     final spans = <InlineSpan>[];
     final marker = TextStyle(color: theme.syntaxMarkerColor);
+    var underline = 0;
+    TextStyle active() => underline > 0
+        ? style.copyWith(decoration: TextDecoration.underline)
+        : style;
 
     void put(int a, int b, TextStyle st) {
       if (b > a) spans.add(TextSpan(text: s.substring(a, b), style: st));
@@ -217,7 +238,7 @@ class InlineRenderer {
     for (final node in nodes) {
       switch (node) {
         case TextNode():
-          put(node.start, node.end, style);
+          put(node.start, node.end, active());
         case EscapeNode():
           put(node.start, node.start + 1, style.merge(marker));
           put(node.start + 1, node.end, style);
@@ -256,6 +277,9 @@ class InlineRenderer {
           put(node.contentStart, node.contentEnd, style.merge(theme.linkStyle));
           if (node.bracketed) put(node.contentEnd, node.end, style.merge(marker));
         case HtmlTagNode():
+          final tag = s.substring(node.start, node.end);
+          if (_uOpenRe.hasMatch(tag)) underline++;
+          if (_uCloseRe.hasMatch(tag) && underline > 0) underline--;
           put(node.start, node.end, style.merge(marker));
       }
     }

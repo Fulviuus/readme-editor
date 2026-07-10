@@ -29,8 +29,9 @@ class ThemeLoadError {
 class ThemeManager extends ChangeNotifier {
   static const _builtinIds = [
     'github',
-    'night',
+    'gothic',
     'newsprint',
+    'night',
     'pixyll',
     'whitey',
   ];

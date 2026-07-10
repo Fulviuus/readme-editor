@@ -554,6 +554,62 @@ void main() {
     });
   });
 
+  group('format commands', () {
+    test('clearFormat strips inline syntax from the selection', () {
+      doc.loadText(r'keep **bold** `code` [label](https://x.dev) end');
+      editor.focusBlock(doc.doc.blocks.first.id);
+      editor.editing.selection = TextSelection(
+          baseOffset: 0, extentOffset: editor.editing.text.length);
+      editor.clearFormat();
+      expect(doc.doc.blocks.single.source, 'keep bold code label end');
+    });
+
+    test('clearFormat with collapsed caret cleans the whole block', () {
+      doc.loadText('a *b* c');
+      editor.focusBlock(doc.doc.blocks.first.id, offset: 0);
+      editor.clearFormat();
+      expect(doc.doc.blocks.single.source, 'a b c');
+    });
+
+    test('toggleUnderline wraps and unwraps', () {
+      doc.loadText('hello world');
+      editor.focusBlock(doc.doc.blocks.first.id);
+      editor.editing.selection =
+          const TextSelection(baseOffset: 0, extentOffset: 5);
+      editor.toggleUnderline();
+      expect(doc.doc.blocks.single.source, '<u>hello</u> world');
+      // Selection now covers 'hello' inside the tags; toggle removes them.
+      editor.toggleUnderline();
+      expect(doc.doc.blocks.single.source, 'hello world');
+    });
+
+    test('underline renders content between hidden tags', () {
+      final r = editor.renderer.renderInline('<u>under</u> plain',
+          baseStyle: editor.theme.bodyStyle);
+      expect(r.renderedText, 'under plain');
+      final underlined = <String>[];
+      r.span.visitChildren((s) {
+        if (s is TextSpan &&
+            s.style?.decoration == TextDecoration.underline) {
+          underlined.add(s.text ?? '');
+        }
+        return true;
+      });
+      expect(underlined.join(), 'under');
+    });
+
+    test('convertToAlert wraps the block and replaces existing tags', () {
+      doc.loadText('watch out');
+      final id = doc.doc.blocks.first.id;
+      editor.focusBlock(id);
+      editor.convertToAlert('WARNING');
+      expect(doc.doc.blocks.single.source, '> [!WARNING]\n> watch out');
+      editor.focusBlock(id);
+      editor.convertToAlert('TIP');
+      expect(doc.doc.blocks.single.source, '> [!TIP]\n> watch out');
+    });
+  });
+
   group('link actions (issue #38)', () {
     test('linkUrlAtCaret finds the link under the caret', () {
       doc.loadText('see [docs](https://x.dev) and https://a.b end');

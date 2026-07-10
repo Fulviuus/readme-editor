@@ -139,6 +139,15 @@ class RenderedBlock extends StatelessWidget {
     );
   }
 
+  /// GitHub-style alerts: `> [!NOTE]` on the quote's first line.
+  static const _alertStyles = {
+    'NOTE': (Color(0xFF0969DA), Icons.info_outline, 'Note'),
+    'TIP': (Color(0xFF1A7F37), Icons.lightbulb_outline, 'Tip'),
+    'IMPORTANT': (Color(0xFF8250DF), Icons.campaign_outlined, 'Important'),
+    'WARNING': (Color(0xFF9A6700), Icons.warning_amber_outlined, 'Warning'),
+    'CAUTION': (Color(0xFFCF222E), Icons.report_outlined, 'Caution'),
+  };
+
   Widget _blockquote(ReadmeTheme theme) {
     final style = theme.bodyStyle.copyWith(
       color: theme.blockquoteTextColor,
@@ -148,6 +157,37 @@ class RenderedBlock extends StatelessWidget {
     final rows = <Widget>[];
     var lineStart = 0;
     final prefixRe = RegExp(r'^ {0,3}(?:> ?)+');
+
+    // Alert header: consumes the first line, colors the border.
+    Color borderColor = theme.blockquoteBorder;
+    final firstStripped =
+        lines.first.replaceFirst(prefixRe, '').trim().toUpperCase();
+    final alertMatch =
+        RegExp(r'^\[!(\w+)\]$').firstMatch(firstStripped);
+    final alert = alertMatch == null
+        ? null
+        : _alertStyles[alertMatch.group(1)];
+    if (alert != null) {
+      final (color, icon, label) = alert;
+      borderColor = color;
+      rows.add(GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () => _focusAt(lines.first.length),
+        child: Padding(
+          padding: EdgeInsets.only(bottom: theme.fontSize * 0.25),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(icon, size: theme.fontSize * 1.1, color: color),
+            SizedBox(width: theme.fontSize * 0.4),
+            Text(label,
+                style: theme.bodyStyle.copyWith(
+                    color: color, fontWeight: FontWeight.w600)),
+          ]),
+        ),
+      ));
+      lineStart += lines.first.length + 1;
+      lines.removeAt(0);
+    }
+
     for (final line in lines) {
       final m = prefixRe.firstMatch(line);
       final prefixLen = m?.end ?? 0;
@@ -180,8 +220,7 @@ class RenderedBlock extends StatelessWidget {
         color: theme.blockquoteBackground,
         border: Border(
           left: BorderSide(
-              color: theme.blockquoteBorder,
-              width: theme.blockquoteBorderWidth),
+              color: borderColor, width: theme.blockquoteBorderWidth),
         ),
       ),
       child: Column(

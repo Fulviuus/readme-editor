@@ -94,7 +94,12 @@ class _EditorViewState extends State<EditorView> {
                   .copyWith(scrollbars: true),
               child: ListView.builder(
                 controller: _scrollController,
-                padding: const EdgeInsets.symmetric(vertical: 48),
+                // Typewriter mode pads by half a viewport so the first and
+                // last lines can still be centered.
+                padding: EdgeInsets.symmetric(
+                    vertical: editor.typewriterModeEnabled
+                        ? constraints.maxHeight / 2
+                        : 48),
                 itemCount: blocks.length + 1,
                 findChildIndexCallback: (key) =>
                     key is ValueKey<String> ? idToIndex[key.value] : null,
