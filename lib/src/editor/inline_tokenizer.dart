@@ -79,6 +79,11 @@ class HtmlTagNode extends InlineNode {
   HtmlTagNode(super.start, super.end);
 }
 
+/// `<!-- … -->` — hidden entirely in rendered mode, dimmed while editing.
+class CommentNode extends InlineNode {
+  CommentNode(super.start, super.end);
+}
+
 final _punct = RegExp(r'''[!-/:-@\[-`{-~]''');
 
 /// Cap on how far a single delimiter (link bracket, emphasis run) scans for
@@ -117,6 +122,8 @@ String plainTextOfInline(String s) {
         case AutolinkNode():
           buf.write(n.url);
         case HtmlTagNode():
+          break;
+        case CommentNode():
           break;
       }
     }
@@ -223,8 +230,18 @@ List<InlineNode> _parse(String s, int from, int to) {
       continue;
     }
 
-    // Bracketed autolink or inline HTML tag.
+    // Bracketed autolink, HTML comment, or inline HTML tag.
     if (c == '<') {
+      if (s.startsWith('<!--', i)) {
+        final close = s.indexOf('-->', i + 4);
+        if (close >= 0 && close + 3 <= to && close - i < _scanWindow) {
+          flushText(i);
+          nodes.add(CommentNode(i, close + 3));
+          i = close + 3;
+          textStart = i;
+          continue;
+        }
+      }
       final rest = s.substring(i, to);
       final auto = _bracketAutolinkRe.firstMatch(rest);
       if (auto != null) {

@@ -158,6 +158,8 @@ class InlineRenderer {
             emitText(node.start, node.end,
                 style.copyWith(color: theme.syntaxMarkerColor));
           }
+        case CommentNode():
+          rb.hidden(node.start, node.end);
       }
     }
     return spans;
@@ -281,6 +283,8 @@ class InlineRenderer {
           if (_uOpenRe.hasMatch(tag)) underline++;
           if (_uCloseRe.hasMatch(tag) && underline > 0) underline--;
           put(node.start, node.end, style.merge(marker));
+        case CommentNode():
+          put(node.start, node.end, style.merge(marker));
       }
     }
     return spans;
@@ -309,6 +313,7 @@ class InlineRenderer {
         AutolinkNode() =>
           AutolinkNode(n.start + d, n.end + d, n.url, bracketed: n.bracketed),
         HtmlTagNode() => HtmlTagNode(n.start + d, n.end + d),
+        CommentNode() => CommentNode(n.start + d, n.end + d),
       };
 
   TextSpan _buildHeadingSpan(String source, int level, TextStyle marker) {

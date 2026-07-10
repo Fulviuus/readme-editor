@@ -257,6 +257,79 @@ List<PlatformMenu> buildPlatformMenus({
         PlatformMenuItemGroup(
           members: [
             PlatformMenuItem(
+                label: 'Copy as Markdown',
+                shortcut: const SingleActivator(LogicalKeyboardKey.keyC,
+                    meta: true, shift: true),
+                onSelected: editor.copyAsMarkdown),
+            PlatformMenuItem(
+                label: 'Copy as Plain Text', onSelected: editor.copyAsPlainText),
+            PlatformMenuItem(
+                label: 'Copy as HTML Code', onSelected: editor.copyAsHtml),
+            PlatformMenuItem(
+                label: 'Paste as Plain Text',
+                shortcut: const SingleActivator(LogicalKeyboardKey.keyV,
+                    meta: true, shift: true),
+                onSelected: () => editor.pasteAsPlainText()),
+          ],
+        ),
+        PlatformMenuItemGroup(
+          members: [
+            PlatformMenu(
+              label: 'Selection',
+              menus: [
+                PlatformMenuItemGroup(members: [
+                  PlatformMenuItem(
+                      label: 'Select Word', onSelected: editor.selectWord),
+                  PlatformMenuItem(
+                      label: 'Select Line', onSelected: editor.selectLine),
+                  PlatformMenuItem(
+                      label: 'Select Paragraph / Block',
+                      onSelected: editor.selectBlock),
+                  PlatformMenuItem(
+                      label: 'Select Styled Scope',
+                      onSelected: editor.selectStyledScope),
+                ]),
+                PlatformMenuItemGroup(members: [
+                  PlatformMenuItem(
+                      label: 'Jump to Top', onSelected: editor.jumpToTop),
+                  PlatformMenuItem(
+                      label: 'Jump to Selection',
+                      onSelected: editor.jumpToSelection),
+                  PlatformMenuItem(
+                      label: 'Jump to Bottom', onSelected: editor.jumpToBottom),
+                ]),
+                PlatformMenuItemGroup(members: [
+                  PlatformMenuItem(
+                      label: 'Jump to Line Start',
+                      onSelected: editor.jumpToLineStart),
+                  PlatformMenuItem(
+                      label: 'Jump to Line End',
+                      onSelected: editor.jumpToLineEnd),
+                ]),
+              ],
+            ),
+            PlatformMenu(
+              label: 'Delete Range',
+              menus: [
+                PlatformMenuItemGroup(members: [
+                  PlatformMenuItem(
+                      label: 'Delete Paragraph / Block',
+                      onSelected: editor.deleteBlock),
+                  PlatformMenuItem(
+                      label: 'Delete Line', onSelected: editor.deleteLine),
+                  PlatformMenuItem(
+                      label: 'Delete Styled Scope',
+                      onSelected: editor.deleteStyledScope),
+                  PlatformMenuItem(
+                      label: 'Delete Word', onSelected: editor.deleteWord),
+                ]),
+              ],
+            ),
+          ],
+        ),
+        PlatformMenuItemGroup(
+          members: [
+            PlatformMenuItem(
               label: 'Bold',
               shortcut:
                   const SingleActivator(LogicalKeyboardKey.keyB, meta: true),
@@ -285,6 +358,12 @@ List<PlatformMenu> buildPlatformMenus({
               shortcut:
                   const SingleActivator(LogicalKeyboardKey.keyU, meta: true),
               onSelected: editor.toggleUnderline,
+            ),
+            PlatformMenuItem(
+              label: 'Comment',
+              shortcut: const SingleActivator(LogicalKeyboardKey.slash,
+                  meta: true, shift: true),
+              onSelected: editor.toggleComment,
             ),
             PlatformMenuItem(
               label: 'Link',
@@ -478,6 +557,19 @@ List<PlatformMenu> buildPlatformMenus({
                   meta: true, alt: true),
               onSelected: editor.convertToMathBlock,
             ),
+            PlatformMenu(
+              label: 'Code Tools',
+              menus: [
+                PlatformMenuItemGroup(members: [
+                  PlatformMenuItem(
+                      label: 'Copy Code Content',
+                      onSelected: editor.copyCodeContent),
+                  PlatformMenuItem(
+                      label: 'Auto Indent Code',
+                      onSelected: editor.autoIndentCode),
+                ]),
+              ],
+            ),
           ],
         ),
         PlatformMenuItemGroup(
@@ -645,6 +737,30 @@ List<PlatformMenu> buildPlatformMenus({
                   : '   Typewriter Mode',
               shortcut: const SingleActivator(LogicalKeyboardKey.f9),
               onSelected: editor.toggleTypewriterMode,
+            ),
+          ],
+        ),
+        PlatformMenuItemGroup(
+          members: [
+            PlatformMenuItem(
+              label: themeManager.zoom == 1.0
+                  ? 'Actual Size'
+                  : 'Actual Size (${(themeManager.zoom * 100).round()}%)',
+              shortcut: const SingleActivator(LogicalKeyboardKey.digit0,
+                  meta: true, shift: true),
+              onSelected: themeManager.resetZoom,
+            ),
+            PlatformMenuItem(
+              label: 'Zoom In',
+              shortcut: const SingleActivator(LogicalKeyboardKey.equal,
+                  meta: true, shift: true),
+              onSelected: themeManager.zoomIn,
+            ),
+            PlatformMenuItem(
+              label: 'Zoom Out',
+              shortcut: const SingleActivator(LogicalKeyboardKey.minus,
+                  meta: true, shift: true),
+              onSelected: themeManager.zoomOut,
             ),
           ],
         ),
@@ -842,6 +958,63 @@ class AppMenuBar extends StatelessWidget {
             ),
             const Divider(height: 8),
             MenuItemButton(
+                onPressed: editor.copyAsMarkdown,
+                shortcut: cmd(LogicalKeyboardKey.keyC, shift: true),
+                child: const Text('Copy as Markdown')),
+            MenuItemButton(
+                onPressed: editor.copyAsPlainText,
+                child: const Text('Copy as Plain Text')),
+            MenuItemButton(
+                onPressed: editor.copyAsHtml,
+                child: const Text('Copy as HTML Code')),
+            MenuItemButton(
+                onPressed: () => editor.pasteAsPlainText(),
+                shortcut: cmd(LogicalKeyboardKey.keyV, shift: true),
+                child: const Text('Paste as Plain Text')),
+            const Divider(height: 8),
+            SubmenuButton(
+              menuChildren: [
+                MenuItemButton(
+                    onPressed: editor.selectWord,
+                    child: const Text('Select Word')),
+                MenuItemButton(
+                    onPressed: editor.selectLine,
+                    child: const Text('Select Line')),
+                MenuItemButton(
+                    onPressed: editor.selectBlock,
+                    child: const Text('Select Paragraph / Block')),
+                MenuItemButton(
+                    onPressed: editor.selectStyledScope,
+                    child: const Text('Select Styled Scope')),
+                const Divider(height: 8),
+                MenuItemButton(
+                    onPressed: editor.jumpToTop,
+                    child: const Text('Jump to Top')),
+                MenuItemButton(
+                    onPressed: editor.jumpToBottom,
+                    child: const Text('Jump to Bottom')),
+              ],
+              child: const Text('Selection'),
+            ),
+            SubmenuButton(
+              menuChildren: [
+                MenuItemButton(
+                    onPressed: editor.deleteBlock,
+                    child: const Text('Delete Paragraph / Block')),
+                MenuItemButton(
+                    onPressed: editor.deleteLine,
+                    child: const Text('Delete Line')),
+                MenuItemButton(
+                    onPressed: editor.deleteStyledScope,
+                    child: const Text('Delete Styled Scope')),
+                MenuItemButton(
+                    onPressed: editor.deleteWord,
+                    child: const Text('Delete Word')),
+              ],
+              child: const Text('Delete Range'),
+            ),
+            const Divider(height: 8),
+            MenuItemButton(
               onPressed: editor.toggleBold,
               shortcut: cmd(LogicalKeyboardKey.keyB),
               child: const Text('Bold'),
@@ -865,6 +1038,11 @@ class AppMenuBar extends StatelessWidget {
               onPressed: editor.toggleUnderline,
               shortcut: cmd(LogicalKeyboardKey.keyU),
               child: const Text('Underline'),
+            ),
+            MenuItemButton(
+              onPressed: editor.toggleComment,
+              shortcut: cmd(LogicalKeyboardKey.slash, shift: true),
+              child: const Text('Comment'),
             ),
             MenuItemButton(
               onPressed: editor.insertLink,
@@ -1008,6 +1186,17 @@ class AppMenuBar extends StatelessWidget {
               onPressed: editor.convertToMathBlock,
               child: const Text('Math Block'),
             ),
+            SubmenuButton(
+              menuChildren: [
+                MenuItemButton(
+                    onPressed: editor.copyCodeContent,
+                    child: const Text('Copy Code Content')),
+                MenuItemButton(
+                    onPressed: editor.autoIndentCode,
+                    child: const Text('Auto Indent Code')),
+              ],
+              child: const Text('Code Tools'),
+            ),
             MenuItemButton(
               onPressed: editor.convertToQuote,
               child: const Text('Quote'),
@@ -1135,6 +1324,23 @@ class AppMenuBar extends StatelessWidget {
                   ? const Icon(Icons.check, size: 16)
                   : const SizedBox(width: 16),
               child: const Text('Typewriter Mode'),
+            ),
+            const Divider(height: 8),
+            MenuItemButton(
+              onPressed: themeManager.resetZoom,
+              child: Text(themeManager.zoom == 1.0
+                  ? 'Actual Size'
+                  : 'Actual Size (${(themeManager.zoom * 100).round()}%)'),
+            ),
+            MenuItemButton(
+              onPressed: themeManager.zoomIn,
+              shortcut: cmd(LogicalKeyboardKey.equal, shift: true),
+              child: const Text('Zoom In'),
+            ),
+            MenuItemButton(
+              onPressed: themeManager.zoomOut,
+              shortcut: cmd(LogicalKeyboardKey.minus, shift: true),
+              child: const Text('Zoom Out'),
             ),
             const Divider(height: 8),
             SubmenuButton(

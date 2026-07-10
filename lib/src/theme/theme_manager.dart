@@ -37,6 +37,10 @@ class ThemeManager extends ChangeNotifier {
   ];
   static const _defaultId = 'github';
   static const _prefsKey = 'theme';
+  static const _zoomKey = 'zoom';
+  static const _zoomStep = 0.1;
+  static const _zoomMin = 0.5;
+  static const _zoomMax = 3.0;
 
   final SharedPreferencesAsync _prefs = SharedPreferencesAsync();
 
@@ -55,8 +59,29 @@ class ThemeManager extends ChangeNotifier {
   List<ReadmeTheme> get themes =>
       List.unmodifiable([..._builtins, ..._userThemes]);
 
-  ReadmeTheme get current =>
-      _themeById(_currentId) ?? _themeById(_defaultId) ?? themes.first;
+  double _zoom = 1.0;
+
+  /// UI zoom factor (View > Zoom In/Out), persisted; 1.0 = actual size.
+  double get zoom => _zoom;
+
+  ReadmeTheme get current {
+    final theme =
+        _themeById(_currentId) ?? _themeById(_defaultId) ?? themes.first;
+    return _zoom == 1.0 ? theme : theme.scaled(_zoom);
+  }
+
+  Future<void> setZoom(double value) async {
+    final clamped =
+        double.parse(value.clamp(_zoomMin, _zoomMax).toStringAsFixed(2));
+    if (clamped == _zoom) return;
+    _zoom = clamped;
+    notifyListeners();
+    await _prefs.setDouble(_zoomKey, _zoom);
+  }
+
+  Future<void> zoomIn() => setZoom(_zoom + _zoomStep);
+  Future<void> zoomOut() => setZoom(_zoom - _zoomStep);
+  Future<void> resetZoom() => setZoom(1.0);
 
   /// Loads built-in theme assets and user themes, then restores the persisted
   /// selection. Call once at startup, after binding initialization.
@@ -66,6 +91,10 @@ class ThemeManager extends ChangeNotifier {
     final saved = await _prefs.getString(_prefsKey);
     if (saved != null && _themeById(saved) != null) {
       _currentId = saved;
+    }
+    final savedZoom = await _prefs.getDouble(_zoomKey);
+    if (savedZoom != null) {
+      _zoom = savedZoom.clamp(_zoomMin, _zoomMax);
     }
     notifyListeners();
   }

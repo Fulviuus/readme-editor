@@ -6,6 +6,7 @@ library;
 
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter/widgets.dart';
+import 'package:markdown/markdown.dart' as md;
 
 import '../document/block.dart';
 import '../document/block_splitter.dart';
@@ -1265,6 +1266,234 @@ class EditorController extends ChangeNotifier {
     }
   }
 
+  // ---- Selection commands (Edit > Selection) ----
+
+  (int, int) _lineBoundsAtCaret() {
+    final text = editing.text;
+    final caret = editing.selection.baseOffset.clamp(0, text.length);
+    final start = text.lastIndexOf('\n', caret - 1 < 0 ? 0 : caret - 1) + 1;
+    final endIdx = text.indexOf('\n', caret);
+    return (start, endIdx < 0 ? text.length : endIdx);
+  }
+
+  void selectWord() {
+    if (focusedBlock == null) return;
+    final w = _wordRangeAt(editing.text, editing.selection.baseOffset);
+    if (w != null) {
+      _select(TextSelection(baseOffset: w.$1, extentOffset: w.$2));
+    }
+  }
+
+  void selectLine() {
+    if (focusedBlock == null) return;
+    final (a, b) = _lineBoundsAtCaret();
+    _select(TextSelection(baseOffset: a, extentOffset: b));
+  }
+
+  void selectBlock() {
+    if (focusedBlock == null) return;
+    _select(TextSelection(
+        baseOffset: 0, extentOffset: editing.text.length));
+  }
+
+  /// Innermost styled inline node (emphasis/code/link…) around the caret.
+  (int, int)? _styledScopeAtCaret() {
+    final caret = editing.selection.baseOffset;
+    (int, int)? best;
+    void walk(List<InlineNode> nodes) {
+      for (final n in nodes) {
+        if (caret < n.start || caret > n.end) continue;
+        if (n is! TextNode) best = (n.start, n.end);
+        if (n is EmphasisNode) walk(n.children);
+        if (n is LinkNode) walk(n.children);
+      }
+    }
+
+    walk(tokenizeInline(editing.text));
+    return best;
+  }
+
+  void selectStyledScope() {
+    if (focusedBlock == null) return;
+    final scope = _styledScopeAtCaret();
+    if (scope != null) {
+      _select(TextSelection(baseOffset: scope.$1, extentOffset: scope.$2));
+    }
+  }
+
+  void jumpToLineStart() {
+    if (focusedBlock == null) return;
+    _select(TextSelection.collapsed(offset: _lineBoundsAtCaret().$1));
+  }
+
+  void jumpToLineEnd() {
+    if (focusedBlock == null) return;
+    _select(TextSelection.collapsed(offset: _lineBoundsAtCaret().$2));
+  }
+
+  void jumpToTop() {
+    final first = docCtrl.doc.blocks.first;
+    focusBlock(first.id, offset: 0);
+  }
+
+  void jumpToBottom() {
+    final last = docCtrl.doc.blocks.last;
+    focusBlock(last.id, offset: last.source.length);
+  }
+
+  /// Re-reveals the caret (scrolls the focused block into view).
+  void jumpToSelection() {
+    final id = _focusedBlockId;
+    if (id == null) return;
+    focusBlock(id, selection: editing.selection);
+  }
+
+  // ---- Delete Range (Edit > Delete Range) ----
+
+  void deleteWord() {
+    if (focusedBlock == null) return;
+    final w = _wordRangeAt(editing.text, editing.selection.baseOffset);
+    if (w != null) replaceRange(w.$1, w.$2, '', kind: EditKind.deleteBack);
+  }
+
+  void deleteLine() {
+    final block = focusedBlock;
+    if (block == null) return;
+    var (a, b) = _lineBoundsAtCaret();
+    // Take the trailing newline so the line disappears entirely.
+    if (b < editing.text.length) b++;
+    if (a == 0 && b >= editing.text.length) {
+      deleteBlock();
+      return;
+    }
+    replaceRange(a, b, '', kind: EditKind.deleteBack);
+  }
+
+  void deleteStyledScope() {
+    if (focusedBlock == null) return;
+    final scope = _styledScopeAtCaret();
+    if (scope != null) {
+      replaceRange(scope.$1, scope.$2, '', kind: EditKind.deleteBack);
+    }
+  }
+
+  /// Deletes the whole focused block.
+  void deleteBlock() {
+    final id = _focusedBlockId;
+    final block = focusedBlock;
+    if (id == null || block == null) return;
+    final i = docCtrl.doc.indexOfBlock(id);
+    if (i < 0) return;
+    docCtrl.spliceBlocks(
+      index: i, before: [block], after: [], kind: EditKind.deleteBack,
+      caretBefore: _snap(editing.selection),
+    );
+    final blocks = docCtrl.doc.blocks;
+    final target = blocks[(i - 1).clamp(0, blocks.length - 1)];
+    focusBlock(target.id, offset: target.source.length);
+  }
+
+  // ---- Code Tools (Paragraph > Code Tools) ----
+
+  /// Copies a code block's body without its fences.
+  void copyCodeContent() {
+    final block = focusedBlock;
+    if (block == null) return;
+    if (block.kind != BlockKind.fencedCode &&
+        block.kind != BlockKind.indentedCode) {
+      return;
+    }
+    Clipboard.setData(ClipboardData(text: block.codeBody));
+  }
+
+  /// Languages where whitespace is syntax — never reindent those.
+  static const _indentSensitive = {
+    'python', 'py', 'yaml', 'yml', 'markdown', 'md', 'haskell', 'makefile',
+  };
+
+  /// Brace/bracket-depth reindent (2 spaces) of the focused fenced block.
+  void autoIndentCode() {
+    final block = focusedBlock;
+    final id = _focusedBlockId;
+    if (block == null || id == null || block.kind != BlockKind.fencedCode) {
+      return;
+    }
+    final lang = block.fenceLanguage?.toLowerCase();
+    if (lang != null && _indentSensitive.contains(lang)) return;
+    final lines = editing.text.split('\n');
+    if (lines.length < 3) return;
+    var depth = 0;
+    for (var i = 1; i < lines.length - 1; i++) {
+      final content = lines[i].trimLeft();
+      final leadingClosers =
+          RegExp(r'^[)\]}]+').firstMatch(content)?.group(0)?.length ?? 0;
+      final lineDepth = (depth - leadingClosers).clamp(0, 99);
+      lines[i] = content.isEmpty ? '' : '${'  ' * lineDepth}$content';
+      for (final ch in content.split('')) {
+        if ('([{'.contains(ch)) depth++;
+        if (')]}'.contains(ch)) depth = (depth - 1).clamp(0, 99);
+      }
+    }
+    final newText = lines.join('\n');
+    if (newText == editing.text) return;
+    final caret = editing.selection.baseOffset.clamp(0, newText.length);
+    _replaceAllText(newText,
+        TextSelection.collapsed(offset: caret.clamp(0, newText.length)));
+  }
+
+  // ---- Copy As / Paste As (Edit menu) ----
+
+  /// The markdown to act on: the focused selection, the focused block, or
+  /// the whole document.
+  String _copySource() {
+    final block = focusedBlock;
+    if (block != null) {
+      final sel = editing.selection;
+      if (sel.isValid && !sel.isCollapsed) {
+        return editing.text.substring(sel.start, sel.end);
+      }
+      return editing.text;
+    }
+    return docCtrl.serialize();
+  }
+
+  /// Copy as Markdown: the raw source, exactly as stored.
+  void copyAsMarkdown() =>
+      Clipboard.setData(ClipboardData(text: _copySource()));
+
+  /// Copy as Plain Text: markers stripped, content kept.
+  void copyAsPlainText() {
+    final src = _copySource();
+    final plain =
+        src.split('\n').map(plainTextOfInline).join('\n');
+    Clipboard.setData(ClipboardData(text: plain));
+  }
+
+  /// Copy as HTML Code: the selection converted through the markdown
+  /// pipeline (unstyled HTML — theme styling never travels with it).
+  void copyAsHtml() {
+    final html = md.markdownToHtml(_copySource(),
+        extensionSet: md.ExtensionSet.gitHubFlavored);
+    Clipboard.setData(ClipboardData(text: html.trimRight()));
+  }
+
+  static final _markdownSpecials = RegExp(r'[\\`*_\[\]<>|~#]');
+
+  /// Paste as Plain Text: clipboard content inserted with markdown special
+  /// characters escaped, so it reads literally instead of becoming syntax.
+  Future<void> pasteAsPlainText() async {
+    final block = focusedBlock;
+    if (block == null) return;
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = data?.text;
+    if (text == null || text.isEmpty) return;
+    final escaped = text.replaceAllMapped(
+        _markdownSpecials, (m) => '\\${m.group(0)}');
+    final sel = editing.selection;
+    if (!sel.isValid) return;
+    replaceRange(sel.start, sel.end, escaped, kind: EditKind.paste);
+  }
+
   // ---- Paragraph-menu commands (block conversions) ----
 
   static final _quotePrefixRe = RegExp(r'^ {0,3}> ?');
@@ -1527,6 +1756,35 @@ class EditorController extends ChangeNotifier {
       final stripped =
           inner.substring(open.length, inner.length - close.length);
       replaceRange(a, b, stripped, kind: EditKind.blockOp);
+      return;
+    }
+    final newText =
+        text.replaceRange(b, b, close).replaceRange(a, a, open);
+    _replaceAllText(newText,
+        TextSelection(baseOffset: a + open.length, extentOffset: b + open.length));
+  }
+
+  /// Toggles an HTML comment `<!-- … -->` around the selection — hidden in
+  /// rendered mode, dimmed while editing.
+  void toggleComment() {
+    final block = focusedBlock;
+    if (block == null) return;
+    final text = editing.text;
+    final sel = editing.selection;
+    if (!sel.isValid) return;
+    const open = '<!-- ';
+    const close = ' -->';
+    if (sel.isCollapsed) {
+      replaceRange(sel.baseOffset, sel.baseOffset, '$open$close',
+          caretAt: sel.baseOffset + open.length);
+      return;
+    }
+    final a = sel.start;
+    final b = sel.end;
+    final inner = text.substring(a, b);
+    final m = RegExp(r'^<!--\s?([\s\S]*?)\s?-->$').firstMatch(inner);
+    if (m != null) {
+      replaceRange(a, b, m.group(1)!, kind: EditKind.blockOp);
       return;
     }
     final newText =

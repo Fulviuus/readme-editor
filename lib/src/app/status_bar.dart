@@ -82,13 +82,43 @@ class StatusBar extends StatelessWidget {
               if (crumbs.isNotEmpty) ...[
                 const SizedBox(width: 16),
                 Flexible(
-                  child: Text(
-                    crumbs.join(' › '),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: fg.withValues(alpha: 0.7),
+                  child: MenuAnchor(
+                    alignmentOffset: const Offset(0, -8),
+                    menuChildren: [
+                      for (final entry in docCtrl.doc.outline)
+                        MenuItemButton(
+                          onPressed: () =>
+                              editor.focusBlock(entry.blockId, offset: 0),
+                          child: Padding(
+                            padding: EdgeInsets.only(
+                                left: (entry.level - 1) * 12.0),
+                            child: Text(
+                              entry.text.isEmpty ? '(untitled)' : entry.text,
+                              style: TextStyle(
+                                  fontSize: 13, color: theme.foreground),
+                            ),
+                          ),
+                        ),
+                      if (docCtrl.doc.outline.isEmpty)
+                        MenuItemButton(
+                          onPressed: null,
+                          child: Text('No headings',
+                              style: TextStyle(color: fg)),
+                        ),
+                    ],
+                    builder: (context, controller, _) => InkWell(
+                      onTap: () => controller.isOpen
+                          ? controller.close()
+                          : controller.open(),
+                      child: Text(
+                        crumbs.join(' › '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: fg.withValues(alpha: 0.7),
+                        ),
+                      ),
                     ),
                   ),
                 ),

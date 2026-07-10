@@ -611,6 +611,85 @@ void main() {
     });
   });
 
+  group('selection and delete-range commands', () {
+    test('selectLine and selectBlock', () {
+      doc.loadText('one two\nthree');
+      editor.focusBlock(doc.doc.blocks.first.id, offset: 4);
+      editor.selectLine();
+      var sel = editor.editing.selection;
+      expect(editor.editing.text.substring(sel.start, sel.end), 'one two');
+      editor.selectBlock();
+      sel = editor.editing.selection;
+      expect(editor.editing.text.substring(sel.start, sel.end), 'one two\nthree');
+    });
+
+    test('selectStyledScope grabs the emphasis under the caret', () {
+      doc.loadText('a **strong** b');
+      editor.focusBlock(doc.doc.blocks.first.id, offset: 5); // inside strong
+      editor.selectStyledScope();
+      final sel = editor.editing.selection;
+      expect(editor.editing.text.substring(sel.start, sel.end), '**strong**');
+    });
+
+    test('deleteWord and deleteLine', () {
+      doc.loadText('alpha beta gamma');
+      editor.focusBlock(doc.doc.blocks.first.id, offset: 7); // in 'beta'
+      editor.deleteWord();
+      expect(doc.doc.blocks.single.source, 'alpha  gamma');
+
+      doc.loadText('l1\nl2\nl3');
+      editor.focusBlock(doc.doc.blocks.first.id, offset: 4); // in 'l2'
+      editor.deleteLine();
+      expect(doc.doc.blocks.single.source, 'l1\nl3');
+    });
+
+    test('deleteBlock removes the whole block', () {
+      doc.loadText('a\n\nb\n\nc');
+      editor.focusBlock(doc.doc.blocks[1].id, offset: 0);
+      editor.deleteBlock();
+      expect(doc.doc.blocks.map((b) => b.source), ['a', 'c']);
+    });
+
+    test('jumpToTop / jumpToBottom move focus across blocks', () {
+      doc.loadText('first\n\nmid\n\nlast');
+      editor.focusBlock(doc.doc.blocks[1].id);
+      editor.jumpToTop();
+      expect(editor.focusedBlockId, doc.doc.blocks.first.id);
+      editor.jumpToBottom();
+      expect(editor.focusedBlockId, doc.doc.blocks.last.id);
+    });
+  });
+
+  group('comment and code tools', () {
+    test('toggleComment wraps and unwraps a selection', () {
+      doc.loadText('secret note');
+      editor.focusBlock(doc.doc.blocks.first.id);
+      editor.editing.selection =
+          const TextSelection(baseOffset: 0, extentOffset: 6);
+      editor.toggleComment();
+      expect(doc.doc.blocks.single.source, '<!-- secret --> note');
+      editor.editing.selection = TextSelection(
+          baseOffset: 0, extentOffset: '<!-- secret -->'.length);
+      editor.toggleComment();
+      expect(doc.doc.blocks.single.source, 'secret note');
+    });
+
+    test('comment content is hidden in rendered output', () {
+      final r = editor.renderer.renderInline('a <!-- hidden --> b',
+          baseStyle: editor.theme.bodyStyle);
+      expect(r.renderedText, 'a  b');
+    });
+
+    test('copyCodeContent needs a code block; autoIndent reindents braces',
+        () {
+      doc.loadText('```js\nfunction f() {\nreturn 1;\n}\n```');
+      editor.focusBlock(doc.doc.blocks.first.id, offset: 6);
+      editor.autoIndentCode();
+      expect(doc.doc.blocks.single.source,
+          '```js\nfunction f() {\n  return 1;\n}\n```');
+    });
+  });
+
   group('link actions (issue #38)', () {
     test('linkUrlAtCaret finds the link under the caret', () {
       doc.loadText('see [docs](https://x.dev) and https://a.b end');

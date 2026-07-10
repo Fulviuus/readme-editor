@@ -117,5 +117,29 @@ void main() {
       final nodes = tokenizeInline('[no url] here');
       expect(nodes.whereType<LinkNode>(), isEmpty);
     });
+
+    test('HTML comment is one CommentNode', () {
+      final nodes = tokenizeInline('a <!-- hi --> b');
+      expect(nodes[1], isA<CommentNode>());
+      expect((nodes[1].start, nodes[1].end), (2, 13));
+    });
+
+    test('unterminated comment stays literal', () {
+      expect(
+          tokenizeInline('a <!-- no end').whereType<CommentNode>(), isEmpty);
+    });
+  });
+
+  group('plainTextOfInline', () {
+    test('strips markers, keeps code/link labels, drops comments and tags', () {
+      // The dropped comment and <br> each leave their surrounding spaces.
+      expect(plainTextOfInline('a **b** `c` [d](u) <!-- x --> <br> e'),
+          'a b c d   e');
+    });
+
+    test('keeps image alt text', () {
+      expect(plainTextOfInline('see ![a cat](cat.png) here'),
+          'see a cat here');
+    });
   });
 }
