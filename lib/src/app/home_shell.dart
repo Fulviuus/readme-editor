@@ -20,6 +20,7 @@ import '../editor/source_view.dart';
 import '../theme/readme_theme.dart';
 import '../theme/theme_manager.dart';
 import '../workspace/html_export.dart';
+import '../workspace/pdf_export.dart';
 import '../workspace/workspace_controller.dart';
 import 'app_menu.dart';
 import 'platform/window_support.dart';
@@ -255,6 +256,25 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 
+  Future<void> _exportPdf() async {
+    _editor.commitSourceMode?.call();
+    await exportPdfDialog(
+      _doc.doc,
+      _editor.theme,
+      title: p.basenameWithoutExtension(_fileName),
+      suggestedName: '${p.basenameWithoutExtension(_fileName)}.pdf',
+    );
+  }
+
+  Future<void> _print() async {
+    _editor.commitSourceMode?.call();
+    await printDocument(
+      _doc.doc,
+      _editor.theme,
+      title: p.basenameWithoutExtension(_fileName),
+    );
+  }
+
   /// Quit via the same confirm-if-dirty flow as the window close button —
   /// the platform-provided quit item would terminate without asking.
   Future<void> _quit() async {
@@ -350,6 +370,8 @@ class _HomeShellState extends State<HomeShell> {
         save: _saveDocument,
         saveAs: _saveDocumentAs,
         exportHtml: _exportHtml,
+        exportPdf: _exportPdf,
+        print: _print,
         toggleSidebar: _toggleSidebar,
         quit: _quit,
         alwaysOnTop: _alwaysOnTop,

@@ -27,6 +27,8 @@ class AppMenuCallbacks {
     required this.save,
     required this.saveAs,
     required this.exportHtml,
+    required this.exportPdf,
+    required this.print,
     required this.toggleSidebar,
     required this.quit,
     required this.alwaysOnTop,
@@ -44,6 +46,8 @@ class AppMenuCallbacks {
   final VoidCallback save;
   final VoidCallback saveAs;
   final VoidCallback exportHtml;
+  final VoidCallback exportPdf;
+  final VoidCallback print;
   final VoidCallback toggleSidebar;
   final VoidCallback quit;
   final bool alwaysOnTop;
@@ -194,8 +198,27 @@ List<PlatformMenu> buildPlatformMenus({
         ),
         PlatformMenuItemGroup(
           members: [
+            PlatformMenu(
+              label: 'Export',
+              menus: [
+                PlatformMenuItemGroup(members: [
+                  PlatformMenuItem(
+                      label: 'PDF…', onSelected: actions.exportPdf),
+                  PlatformMenuItem(
+                      label: 'HTML…', onSelected: actions.exportHtml),
+                ]),
+              ],
+            ),
+          ],
+        ),
+        PlatformMenuItemGroup(
+          members: [
             PlatformMenuItem(
-                label: 'Export HTML…', onSelected: actions.exportHtml),
+              label: 'Print…',
+              shortcut:
+                  const SingleActivator(LogicalKeyboardKey.keyP, meta: true),
+              onSelected: actions.print,
+            ),
           ],
         ),
       ],
@@ -914,9 +937,21 @@ class AppMenuBar extends StatelessWidget {
               child: const Text('Save As…'),
             ),
             const Divider(height: 8),
+            SubmenuButton(
+              menuChildren: [
+                MenuItemButton(
+                    onPressed: actions.exportPdf,
+                    child: const Text('PDF…')),
+                MenuItemButton(
+                    onPressed: actions.exportHtml,
+                    child: const Text('HTML…')),
+              ],
+              child: const Text('Export'),
+            ),
             MenuItemButton(
-              onPressed: actions.exportHtml,
-              child: const Text('Export HTML…'),
+              onPressed: actions.print,
+              shortcut: cmd(LogicalKeyboardKey.keyP),
+              child: const Text('Print…'),
             ),
           ],
           child: const MenuAcceleratorLabel('&File'),

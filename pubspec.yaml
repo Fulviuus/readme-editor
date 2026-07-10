@@ -45,6 +45,8 @@ dependencies:
   path: ^1.9.1
   path_provider: ^2.1.6
   url_launcher: ^6.3.2
+  printing: ^5.15.0
+  pdf: ^3.13.0
 
 dev_dependencies:
   flutter_test:
@@ -71,6 +73,7 @@ flutter:
   assets:
     - assets/themes/
     - assets/welcome.md
+    - assets/fonts/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
