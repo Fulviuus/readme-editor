@@ -1,0 +1,1270 @@
+/// Orchestrates hybrid editing: which block is focused, the shared editing
+/// controller/focus node, and every structural editing gesture — Enter,
+/// Backspace-at-0, auto-conversion, merges, formatting shortcuts, undo
+/// bridging (docs/DESIGN-editor-interaction.md §2, §5, §6).
+library;
+
+import 'package:flutter/widgets.dart';
+
+import '../document/block.dart';
+import '../document/block_splitter.dart';
+import '../document/document_controller.dart';
+import '../theme/readme_theme.dart';
+import 'inline_renderer.dart';
+import 'markdown_editing_controller.dart';
+
+final _listItemLineRe =
+    RegExp(r'^(\s*)([-*+]|\d{1,9}[.)])([ \t]+)(\[[ xX]\][ \t]+)?');
+final _emptyQuoteLineRe = RegExp(r'^ {0,3}(?:> ?)+$');
+final _fenceLineRe = RegExp(r'^ {0,3}(`{3,}|~{3,})[ \t]*(\S*)[ \t]*$');
+final _thematicLineRe = RegExp(r'^ {0,3}([-_*])( *\1){2,}[ \t]*$');
+final _setextLineRe = RegExp(r'^ {0,3}(=+|-+)[ \t]*$');
+final _tableDelimLineRe = RegExp(
+    r'^ {0,3}\|?[ \t]*:?-+:?[ \t]*(\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$');
+
+class EditorController extends ChangeNotifier {
+  EditorController(this.docCtrl, ReadmeTheme theme)
+      : _renderer = InlineRenderer(theme),
+        _theme = theme {
+    editing.renderer = _renderer;
+    editing.addListener(_onEditingChanged);
+    focusNode.addListener(_onFocusNodeChanged);
+  }
+
+  final DocumentController docCtrl;
+  final MarkdownEditingController editing = MarkdownEditingController();
+  final FocusNode focusNode = FocusNode(debugLabel: 'readme-editing-block');
+
+  InlineRenderer _renderer;
+  ReadmeTheme _theme;
+  ReadmeTheme get theme => _theme;
+  InlineRenderer get renderer => _renderer;
+
+  set theme(ReadmeTheme t) {
+    _theme = t;
+    _renderer = InlineRenderer(t, imageBuilder: _renderer.imageBuilder);
+    editing.renderer = _renderer;
+    notifyListeners();
+  }
+
+  set imageBuilder(ImageBuilder? b) {
+    _renderer = InlineRenderer(_theme, imageBuilder: b);
+    editing.renderer = _renderer;
+  }
+
+  String? _focusedBlockId;
+  String? get focusedBlockId => _focusedBlockId;
+
+  /// Ephemeral trailing paragraph (§8): undo-invisible, removed if abandoned.
+  String? _ephemeralBlockId;
+
+  bool focusModeEnabled = false;
+  bool typewriterModeEnabled = false;
+
+  /// Source mode (Cmd+/): whole document as one plain-text editor; commits
+  /// as a single replaceAll on exit. Owned here, rendered by the app shell.
+  final ValueNotifier<bool> sourceModeEnabled = ValueNotifier(false);
+
+  /// Find/replace bar visibility (Cmd+F). Owned here, rendered by the shell.
+  final ValueNotifier<bool> findVisible = ValueNotifier(false);
+
+  /// Set by SourceView while source mode is open: commits the source buffer
+  /// into the document. The shell calls this before saves, exports and
+  /// dirty checks so uncommitted source-mode edits are never lost.
+  VoidCallback? commitSourceMode;
+
+  void toggleFocusMode() {
+    focusModeEnabled = !focusModeEnabled;
+    notifyListeners();
+  }
+
+  void toggleSourceMode() => sourceModeEnabled.value = !sourceModeEnabled.value;
+
+  /// Sticky x (in the editor's content coordinates) for vertical caret moves
+  /// across blocks.
+  double? goalX;
+
+  /// Content width of the editor column, kept fresh by the view; used to lay
+  /// out neighbour blocks for vertical caret transfer.
+  double contentWidth = 700;
+
+  bool _applying = false;
+  TextEditingValue _lastValue = TextEditingValue.empty;
+
+  // Per-item focus flags so a focus move rebuilds exactly two items (§9).
+  final Map<String, ValueNotifier<bool>> _focusFlags = {};
+
+  ValueNotifier<bool> focusFlag(String blockId) => _focusFlags.putIfAbsent(
+      blockId, () => ValueNotifier(blockId == _focusedBlockId));
+
+  Block? get focusedBlock =>
+      _focusedBlockId == null ? null : docCtrl.doc.blockById(_focusedBlockId!);
+
+  // ---- Focus management ----
+
+  void focusBlock(String id, {int offset = 0, TextSelection? selection}) {
+    final block = docCtrl.doc.blockById(id);
+    if (block == null) return;
+    final previous = _focusedBlockId;
+    if (previous != null && previous != id) {
+      _discardEphemeralIfAbandoned(previous);
+    }
+    _focusedBlockId = id;
+    final sel = selection ??
+        TextSelection.collapsed(offset: offset.clamp(0, block.source.length));
+    _setEditingValue(block, TextEditingValue(
+      text: block.source,
+      selection: _clampSelection(sel, block.source.length),
+    ));
+    docCtrl.sealUndoGroup();
+    if (previous != null && previous != id) {
+      _focusFlags[previous]?.value = false;
+    }
+    focusFlag(id).value = true;
+    focusNode.requestFocus();
+    // Keep the per-item flag map bounded across splits/merges/file loads.
+    // Pruned notifiers are dropped, not disposed: an unmounting item widget
+    // may still remove its listener this frame.
+    if (_focusFlags.length > 512) {
+      final live = {for (final b in docCtrl.doc.blocks) b.id};
+      _focusFlags.removeWhere(
+          (flagId, _) => !live.contains(flagId) && flagId != _focusedBlockId);
+    }
+    notifyListeners();
+  }
+
+  void blur() {
+    final previous = _focusedBlockId;
+    if (previous == null) return;
+    _focusedBlockId = null;
+    _focusFlags[previous]?.value = false;
+    docCtrl.sealUndoGroup();
+    _discardEphemeralIfAbandoned(previous);
+    notifyListeners();
+  }
+
+  void _onFocusNodeChanged() {
+    if (!focusNode.hasFocus && _focusedBlockId != null) {
+      // Focus went elsewhere (sidebar, dialog): leave rendered mode.
+      blur();
+    }
+  }
+
+  void _discardEphemeralIfAbandoned(String id) {
+    if (id != _ephemeralBlockId) return;
+    _ephemeralBlockId = null;
+    final i = docCtrl.doc.indexOfBlock(id);
+    if (i < 0) return;
+    final b = docCtrl.doc.blocks[i];
+    if (b.kind == BlockKind.paragraph && b.source.isEmpty &&
+        docCtrl.doc.blocks.length > 1) {
+      docCtrl.spliceBlocks(
+          index: i, before: [b], after: [], kind: EditKind.blockOp,
+          record: false);
+    }
+  }
+
+  /// Any RECORDED edit touching the ephemeral tail makes it a real block —
+  /// discarding it later (unrecorded) would desync the undo stack's splice
+  /// indices and undo would corrupt the list. Called at the head of every
+  /// mutating handler.
+  void _materializeEphemeral() {
+    if (_focusedBlockId != null && _focusedBlockId == _ephemeralBlockId) {
+      _ephemeralBlockId = null;
+    }
+  }
+
+  /// Click on the canvas below the last block (§8).
+  void focusTail() {
+    final blocks = docCtrl.doc.blocks;
+    final last = blocks.last;
+    if (last.kind == BlockKind.paragraph && last.source.isEmpty) {
+      focusBlock(last.id);
+      return;
+    }
+    final tail = Block(kind: BlockKind.paragraph, source: '');
+    docCtrl.spliceBlocks(
+        index: blocks.length, before: [], after: [tail],
+        kind: EditKind.blockOp, record: false);
+    _ephemeralBlockId = tail.id;
+    focusBlock(tail.id);
+  }
+
+  TextSelection _clampSelection(TextSelection sel, int max) =>
+      TextSelection(
+        baseOffset: sel.baseOffset.clamp(0, max),
+        extentOffset: sel.extentOffset.clamp(0, max),
+      );
+
+  void _setEditingValue(Block block, TextEditingValue value) {
+    _applying = true;
+    editing.fallbackKind = block.kind;
+    editing.value = value;
+    _applying = false;
+    _lastValue = value;
+  }
+
+  CaretSnapshot? _snap(TextSelection sel) => _focusedBlockId == null
+      ? null
+      : CaretSnapshot(_focusedBlockId!, sel.baseOffset, sel.extentOffset);
+
+  // ---- The single recording point: TextField edits → document ----
+
+  void _onEditingChanged() {
+    if (_applying) return;
+    final id = _focusedBlockId;
+    if (id == null) return;
+    final v = editing.value;
+    final old = _lastValue;
+    _lastValue = v;
+    if (v.text == old.text) {
+      if (v.selection != old.selection) {
+        docCtrl.sealUndoGroup();
+        goalX = null;
+      }
+      return;
+    }
+    goalX = null;
+    if (id == _ephemeralBlockId) _ephemeralBlockId = null;
+
+    final grew = v.text.length > old.text.length;
+    // Multi-line changes (paste, and deletions that create a blank line
+    // inside a paragraph) may need a structural split (§2.4). Front matter
+    // is exempt: fragment scanning would shatter `---` fences into thematic
+    // breaks, and its kind is index-0-only anyway.
+    final blockKind = docCtrl.doc.blockById(id)?.kind;
+    if (v.text.contains('\n') && blockKind != BlockKind.frontMatter) {
+      final parts = splitMarkdown(v.text, isFragment: true).blocks;
+      if (parts.length > 1) {
+        _rescanAndRefocus(id, v, old);
+        return;
+      }
+    }
+    String? committed;
+    if (grew && v.selection.isCollapsed && v.selection.baseOffset > 0) {
+      committed = v.text[v.selection.baseOffset - 1];
+    }
+    docCtrl.changeBlockSource(
+      id,
+      v.text,
+      kind: grew ? EditKind.typing : EditKind.deleteBack,
+      caretBefore: CaretSnapshot(id, old.selection.baseOffset,
+          old.selection.extentOffset),
+      caretAfter: _snap(v.selection),
+      committedChar: committed,
+    );
+    final b = docCtrl.doc.blockById(id);
+    if (b != null) editing.fallbackKind = b.kind;
+  }
+
+  void _rescanAndRefocus(String id, TextEditingValue v, TextEditingValue old) {
+    final caret = v.selection.baseOffset;
+    final parts = docCtrl.rescanBlock(id, v.text,
+        caretBefore: CaretSnapshot(id, old.selection.baseOffset));
+    if (parts == null || parts.isEmpty) return;
+    final (target, local) = _locateOffset(parts, caret);
+    focusBlock(target.id, offset: local);
+  }
+
+  /// Maps an absolute offset in the pre-split text to (block, local offset),
+  /// accounting for the newlines that became block separators.
+  (Block, int) _locateOffset(List<Block> parts, int offset) {
+    var remaining = offset;
+    for (var k = 0; k < parts.length; k++) {
+      final len = parts[k].source.length;
+      if (remaining <= len || k == parts.length - 1) {
+        return (parts[k], remaining.clamp(0, len));
+      }
+      remaining -= len;
+      // separator newlines: 1 + blank lines before the next part
+      remaining -= 1 + parts[k + 1].blankLinesBefore;
+      if (remaining < 0) return (parts[k], len);
+    }
+    return (parts.last, parts.last.source.length);
+  }
+
+  // ---- Programmatic text edits within the focused block ----
+
+  /// Replaces [start, end) with [replacement], records one edit, and places
+  /// the caret (defaults to just after the replacement).
+  void replaceRange(int start, int end, String replacement,
+      {int? caretAt, EditKind kind = EditKind.typing}) {
+    final id = _focusedBlockId;
+    final block = focusedBlock;
+    if (id == null || block == null) return;
+    _materializeEphemeral();
+    final text = editing.text;
+    final newText =
+        text.replaceRange(start.clamp(0, text.length), end.clamp(0, text.length), replacement);
+    final caret = caretAt ?? start + replacement.length;
+    final before = _snap(editing.selection);
+    _setEditingValue(block,
+        TextEditingValue(text: newText, selection: TextSelection.collapsed(offset: caret.clamp(0, newText.length))));
+    docCtrl.changeBlockSource(id, newText,
+        kind: kind, caretBefore: before, caretAfter: _snap(editing.selection));
+    final b = docCtrl.doc.blockById(id);
+    if (b != null) editing.fallbackKind = b.kind;
+  }
+
+  /// Replaces the focused block's whole source, one atomic (non-coalescing)
+  /// edit — used by auto-conversions.
+  void _convertTo(String newSource, int caret) {
+    final id = _focusedBlockId;
+    final block = focusedBlock;
+    if (id == null || block == null) return;
+    _materializeEphemeral();
+    final before = _snap(editing.selection);
+    docCtrl.changeBlockSource(id, newSource,
+        kind: EditKind.autoConvert,
+        caretBefore: before,
+        caretAfter: CaretSnapshot(id, caret));
+    final updated = docCtrl.doc.blockById(id);
+    if (updated != null) {
+      _setEditingValue(updated, TextEditingValue(
+          text: newSource,
+          selection: TextSelection.collapsed(offset: caret.clamp(0, newSource.length))));
+    }
+    notifyListeners();
+  }
+
+  // ---- Enter (§2.1 + §2.3B) ----
+
+  bool handleEnter({bool shift = false}) {
+    final block = focusedBlock;
+    final id = _focusedBlockId;
+    if (block == null || id == null) return false;
+    _materializeEphemeral();
+    var sel = editing.selection;
+    if (!sel.isValid) return false;
+    if (!sel.isCollapsed) {
+      // Table navigation leaves the landing cell selected (so typing
+      // replaces it); Enter there is a pure row move — collapse, don't
+      // delete.
+      if (block.kind == BlockKind.table) {
+        _select(TextSelection.collapsed(offset: sel.start));
+        sel = editing.selection;
+      } else {
+        replaceRange(sel.start, sel.end, '');
+        sel = editing.selection;
+      }
+    }
+    final text = editing.text;
+    final caret = sel.baseOffset;
+
+    if (shift) {
+      // Soft break; in tables a <br>.
+      replaceRange(caret, caret,
+          block.kind == BlockKind.table ? '<br>' : '\n');
+      return true;
+    }
+
+    final lineStart = text.lastIndexOf('\n', caret - 1 < 0 ? 0 : caret - 1) + 1;
+    final lineEndIdx = text.indexOf('\n', caret);
+    final lineEnd = lineEndIdx < 0 ? text.length : lineEndIdx;
+    final line = text.substring(lineStart, lineEnd);
+
+    // Newline-committed conversions (paragraph blocks only).
+    if (block.kind == BlockKind.paragraph) {
+      final fence = _fenceLineRe.firstMatch(text);
+      if (fence != null && !text.contains('\n')) {
+        final open = text.trimRight();
+        final marker = fence.group(1)!;
+        _convertTo('$open\n\n${marker[0] * marker.length}', open.length + 1);
+        return true;
+      }
+      if (text.trim() == r'$$') {
+        _convertTo('\$\$\n\n\$\$', 3);
+        return true;
+      }
+      if (!text.contains('\n') && _thematicLineRe.hasMatch(text)) {
+        _splitInto([
+          Block(kind: BlockKind.thematicBreak, source: text),
+          Block(kind: BlockKind.paragraph, source: ''),
+        ], focusIndex: 1, caret: 0, replacing: block);
+        return true;
+      }
+      if (text.contains('\n') &&
+          caret == text.length &&
+          _setextLineRe.hasMatch(line) &&
+          lineStart > 0) {
+        _splitInto([
+          Block(kind: BlockKind.heading, source: text),
+          Block(kind: BlockKind.paragraph, source: ''),
+        ], focusIndex: 1, caret: 0, replacing: block);
+        return true;
+      }
+      if (_tableDelimLineRe.hasMatch(line) &&
+          line.contains('-') &&
+          lineStart > 0 &&
+          text.substring(0, lineStart - 1).split('\n').last.contains('|')) {
+        final cols = '|'.allMatches(line).length;
+        final row = '|${'   |' * (cols - 1).clamp(1, 99)}';
+        final newSource = '$text\n$row';
+        _convertTo(newSource, newSource.length - row.length + 2);
+        return true;
+      }
+    }
+
+    switch (block.kind) {
+      case BlockKind.fencedCode:
+      case BlockKind.mathBlock:
+      case BlockKind.html:
+      case BlockKind.frontMatter:
+      case BlockKind.indentedCode:
+        // A just-typed opening line (live kind re-derivation converts
+        // '```lang' / '$$' to fence/math before Enter arrives): complete the
+        // block with an empty body and a closing fence, caret inside.
+        if (!text.contains('\n') && caret == text.length) {
+          if (block.kind == BlockKind.fencedCode) {
+            final m = _fenceLineRe.firstMatch(text);
+            if (m != null) {
+              final marker = m.group(1)!;
+              _convertTo('$text\n\n${marker[0] * marker.length}',
+                  text.length + 1);
+              return true;
+            }
+          }
+          if (block.kind == BlockKind.mathBlock && text.trim() == r'$$') {
+            _convertTo('\$\$\n\n\$\$', 3);
+            return true;
+          }
+        }
+        // Enter after the closing fence exits the block.
+        if (caret == text.length &&
+            block.kind == BlockKind.fencedCode &&
+            block.fenceIsClosed) {
+          _insertParagraphBelow(block);
+          return true;
+        }
+        if (caret == text.length &&
+            block.kind == BlockKind.mathBlock &&
+            text.split('\n').length > 1 &&
+            text.trimRight().endsWith(r'$$')) {
+          _insertParagraphBelow(block);
+          return true;
+        }
+        final indent = RegExp(r'^[ \t]*').firstMatch(line)!.group(0)!;
+        replaceRange(caret, caret, '\n$indent');
+        return true;
+
+      case BlockKind.list:
+        return _handleEnterInList(block, text, caret, lineStart, lineEnd);
+
+      case BlockKind.blockquote:
+        if (_emptyQuoteLineRe.hasMatch(line)) {
+          // Empty `>` line: exit the quote.
+          final withoutLine = (lineStart > 0
+                  ? text.substring(0, lineStart - 1)
+                  : '') +
+              text.substring(lineEnd);
+          _splitInto([
+            if (withoutLine.isNotEmpty)
+              Block(kind: BlockKind.blockquote, source: withoutLine),
+            Block(kind: BlockKind.paragraph, source: ''),
+          ], focusIndex: withoutLine.isNotEmpty ? 1 : 0, caret: 0,
+              replacing: block);
+          return true;
+        }
+        replaceRange(caret, caret, '\n> ');
+        return true;
+
+      case BlockKind.table:
+        // Enter = same column next row (append row on last).
+        return _tableEnter(block, text, caret);
+
+      case BlockKind.heading:
+        if (caret == text.length) {
+          _insertParagraphBelow(block);
+          return true;
+        }
+        _splitAtCaret(block, text, caret);
+        return true;
+
+      case BlockKind.paragraph:
+      case BlockKind.thematicBreak:
+        _splitAtCaret(block, text, caret);
+        return true;
+    }
+  }
+
+  void _insertParagraphBelow(Block block) {
+    final i = docCtrl.doc.indexOfBlock(block.id);
+    if (i < 0) return;
+    final p = Block(kind: BlockKind.paragraph, source: '');
+    docCtrl.spliceBlocks(
+      index: i + 1, before: [], after: [p], kind: EditKind.split,
+      caretBefore: _snap(editing.selection),
+      caretAfter: CaretSnapshot(p.id, 0),
+    );
+    focusBlock(p.id);
+  }
+
+  void _splitAtCaret(Block block, String text, int caret) {
+    final left = text.substring(0, caret);
+    final right = text.substring(caret);
+    final leftBlock = Block(
+      id: block.id,
+      kind: deriveSingleKind(left) ?? BlockKind.paragraph,
+      source: left,
+      blankLinesBefore: block.blankLinesBefore,
+    );
+    final rightBlock = Block(
+      kind: deriveSingleKind(right) ?? BlockKind.paragraph,
+      source: right,
+    );
+    _splitInto([leftBlock, rightBlock],
+        focusIndex: 1, caret: 0, replacing: block);
+  }
+
+  void _splitInto(List<Block> parts,
+      {required int focusIndex, required int caret, required Block replacing}) {
+    final i = docCtrl.doc.indexOfBlock(replacing.id);
+    if (i < 0 || parts.isEmpty) return;
+    docCtrl.spliceBlocks(
+      index: i, before: [replacing], after: parts, kind: EditKind.split,
+      caretBefore: _snap(editing.selection),
+      caretAfter: CaretSnapshot(parts[focusIndex].id, caret),
+    );
+    focusBlock(parts[focusIndex].id, offset: caret);
+  }
+
+  bool _handleEnterInList(
+      Block block, String text, int caret, int lineStart, int lineEnd) {
+    final line = text.substring(lineStart, lineEnd);
+    final m = _listItemLineRe.firstMatch(line);
+    if (m == null) {
+      // Continuation line: plain newline with indent.
+      final indent = RegExp(r'^[ \t]*').firstMatch(line)!.group(0)!;
+      replaceRange(caret, caret, '\n$indent');
+      return true;
+    }
+    final indent = m.group(1)!;
+    final content = line.substring(m.end);
+    if (content.trim().isEmpty && caret >= lineStart + m.end) {
+      if (indent.length >= 2) {
+        // Outdent one level.
+        final newLine = line.substring(2);
+        replaceRange(lineStart, lineEnd, newLine,
+            caretAt: caret - 2, kind: EditKind.blockOp);
+        return true;
+      }
+      // Marker-only first-level item: exit the list.
+      final beforeLines =
+          lineStart > 0 ? text.substring(0, lineStart - 1) : '';
+      final afterLines = lineEnd < text.length ? text.substring(lineEnd + 1) : '';
+      _splitInto([
+        if (beforeLines.isNotEmpty)
+          Block(kind: BlockKind.list, source: beforeLines),
+        Block(kind: BlockKind.paragraph, source: ''),
+        if (afterLines.isNotEmpty)
+          Block(kind: BlockKind.list, source: afterLines),
+      ], focusIndex: beforeLines.isNotEmpty ? 1 : 0, caret: 0,
+          replacing: block);
+      return true;
+    }
+    // Split the item at the caret; tail becomes the new item's content.
+    final bullet = m.group(2)!;
+    final task = m.group(4) != null;
+    String nextMarker;
+    final ordered = RegExp(r'^(\d{1,9})([.)])$').firstMatch(bullet);
+    if (ordered != null) {
+      nextMarker =
+          '${int.parse(ordered.group(1)!) + 1}${ordered.group(2)!} ';
+    } else {
+      nextMarker = '$bullet ';
+    }
+    if (task) nextMarker = '$nextMarker[ ] ';
+    final insert = '\n$indent$nextMarker';
+    replaceRange(caret, caret, insert, kind: EditKind.split);
+    return true;
+  }
+
+  bool _tableEnter(Block block, String text, int caret) {
+    final lines = text.split('\n');
+    var lineStart = 0;
+    var row = 0;
+    for (; row < lines.length; row++) {
+      final end = lineStart + lines[row].length;
+      if (caret <= end) break;
+      lineStart = end + 1;
+    }
+    final col = _pipeCountBefore(lines[row.clamp(0, lines.length - 1)],
+        caret - lineStart);
+    var targetRow = row + 1;
+    if (targetRow == 1) targetRow = 2; // skip the delimiter row
+    if (targetRow >= lines.length) {
+      final cols = '|'.allMatches(lines[0]).length;
+      final newRow = '|${'   |' * (cols - 1).clamp(1, 99)}';
+      final newText = '$text\n$newRow';
+      _convertTo(newText, newText.length - newRow.length + 2);
+      return true;
+    }
+    final target = _cellRange(lines, targetRow, col);
+    _select(TextSelection(baseOffset: target.$1, extentOffset: target.$2));
+    return true;
+  }
+
+  // ---- Tab in lists and tables ----
+
+  bool handleTab({bool shift = false}) {
+    final block = focusedBlock;
+    if (block == null) return false;
+    final text = editing.text;
+    final caret = editing.selection.baseOffset;
+    if (block.kind == BlockKind.list) {
+      final lineStart =
+          text.lastIndexOf('\n', caret - 1 < 0 ? 0 : caret - 1) + 1;
+      if (shift) {
+        if (text.startsWith('  ', lineStart)) {
+          replaceRange(lineStart, lineStart + 2, '',
+              caretAt: (caret - 2).clamp(0, text.length), kind: EditKind.blockOp);
+        }
+      } else {
+        replaceRange(lineStart, lineStart, '  ',
+            caretAt: caret + 2, kind: EditKind.blockOp);
+      }
+      return true;
+    }
+    if (block.kind == BlockKind.table) {
+      return _tableTab(text, caret, back: shift);
+    }
+    return false;
+  }
+
+  bool _tableTab(String text, int caret, {required bool back}) {
+    final lines = text.split('\n');
+    var lineStart = 0;
+    var row = 0;
+    for (; row < lines.length; row++) {
+      final end = lineStart + lines[row].length;
+      if (caret <= end) break;
+      lineStart = end + 1;
+    }
+    var col = _pipeCountBefore(lines[row.clamp(0, lines.length - 1)],
+        caret - lineStart);
+    final cols = _cellCount(lines[0]);
+    if (!back) {
+      col++;
+      if (col >= cols) {
+        col = 0;
+        row++;
+        if (row == 1) row = 2;
+        if (row >= lines.length) {
+          final newRow = '|${'   |' * (cols).clamp(1, 99)}';
+          final newText = '$text\n$newRow';
+          _convertTo(newText, newText.length - newRow.length + 2);
+          return true;
+        }
+      }
+    } else {
+      col--;
+      if (col < 0) {
+        row--;
+        if (row == 1) row = 0;
+        if (row < 0) return true;
+        col = cols - 1;
+      }
+    }
+    final r = _cellRange(lines, row, col);
+    _select(TextSelection(baseOffset: r.$1, extentOffset: r.$2));
+    return true;
+  }
+
+  int _pipeCountBefore(String line, int localOffset) {
+    var pipes = 0;
+    final upTo = localOffset.clamp(0, line.length);
+    for (var i = 0; i < upTo; i++) {
+      if (line[i] == '|' && (i == 0 || line[i - 1] != r'\')) pipes++;
+    }
+    final leading = line.trimLeft().startsWith('|') ? 1 : 0;
+    return (pipes - leading).clamp(0, 999);
+  }
+
+  int _cellCount(String headerLine) {
+    var pipes = 0;
+    for (var i = 0; i < headerLine.length; i++) {
+      if (headerLine[i] == '|' && (i == 0 || headerLine[i - 1] != r'\')) {
+        pipes++;
+      }
+    }
+    final t = headerLine.trim();
+    var cells = pipes - 1;
+    if (!t.startsWith('|')) cells++;
+    if (!t.endsWith('|')) cells++;
+    return cells.clamp(1, 999);
+  }
+
+  /// (start, end) source offsets of the trimmed content of cell [row]/[col].
+  (int, int) _cellRange(List<String> lines, int row, int col) {
+    var base = 0;
+    for (var i = 0; i < row; i++) {
+      base += lines[i].length + 1;
+    }
+    final line = lines[row];
+    final bounds = <int>[];
+    for (var i = 0; i < line.length; i++) {
+      if (line[i] == '|' && (i == 0 || line[i - 1] != r'\')) bounds.add(i);
+    }
+    final startsWithPipe = line.trimLeft().startsWith('|');
+    var cellStart = 0;
+    var cellEnd = line.length;
+    var idx = startsWithPipe ? col : col - 1;
+    // A short row (fewer cells than the header) clamps to its last cell —
+    // never select the whole row with its pipes.
+    if (idx >= bounds.length) idx = bounds.length - 1;
+    if (idx >= 0 && idx < bounds.length) cellStart = bounds[idx] + 1;
+    if (idx + 1 < bounds.length) cellEnd = bounds[idx + 1];
+    // Trim whitespace inside the cell.
+    while (cellStart < cellEnd && line[cellStart] == ' ') {
+      cellStart++;
+    }
+    while (cellEnd > cellStart && line[cellEnd - 1] == ' ') {
+      cellEnd--;
+    }
+    return (base + cellStart, base + cellEnd);
+  }
+
+  void _select(TextSelection sel) {
+    final block = focusedBlock;
+    if (block == null) return;
+    _setEditingValue(block,
+        editing.value.copyWith(selection: _clampSelection(sel, editing.text.length)));
+    docCtrl.sealUndoGroup();
+  }
+
+  // ---- Backspace at offset 0 (§2.2): demote, then merge ----
+
+  bool handleBackspaceAtStart() {
+    final block = focusedBlock;
+    final id = _focusedBlockId;
+    if (block == null || id == null) return false;
+    final sel = editing.selection;
+    if (!sel.isCollapsed || sel.baseOffset != 0) return false;
+    _materializeEphemeral();
+    final text = editing.text;
+
+    // Stage 1: demote own markers.
+    switch (block.kind) {
+      case BlockKind.heading:
+        final demoted = block.isSetextHeading
+            ? text.split('\n').sublist(0, text.split('\n').length - 1).join('\n')
+            : text.replaceFirst(RegExp(r'^ {0,3}#{1,6}[ \t]*'), '');
+        _convertTo(demoted, 0);
+        return true;
+      case BlockKind.blockquote:
+        final demoted = text
+            .split('\n')
+            .map((l) => l.replaceFirst(RegExp(r'^ {0,3}> ?'), ''))
+            .join('\n');
+        _convertTo(demoted, 0);
+        return true;
+      case BlockKind.list:
+        final lines = text.split('\n');
+        final m = _listItemLineRe.firstMatch(lines.first);
+        if (m != null) {
+          if (m.group(1)!.length >= 2) {
+            _convertTo(text.substring(2), 0);
+            return true;
+          }
+          final demotedFirst = lines.first.substring(m.end);
+          if (lines.length == 1) {
+            _convertTo(demotedFirst, 0);
+          } else {
+            final rest = lines.sublist(1).join('\n');
+            _splitInto([
+              Block(kind: BlockKind.paragraph, source: demotedFirst),
+              Block(kind: deriveSingleKind(rest) ?? BlockKind.list, source: rest),
+            ], focusIndex: 0, caret: 0, replacing: block);
+          }
+          return true;
+        }
+      case BlockKind.fencedCode:
+      case BlockKind.mathBlock:
+        if (block.codeBody.trim().isEmpty) {
+          _convertTo('', 0);
+          return true;
+        }
+      default:
+        break;
+    }
+
+    // Stage 2 applies only to blocks with no structure of their own
+    // (§2.2: "current block is a plain paragraph or thematicBreak").
+    // A table/fence/html block must never be glued into its neighbour —
+    // Backspace at its start just moves focus up.
+    if (block.kind != BlockKind.paragraph &&
+        block.kind != BlockKind.thematicBreak) {
+      final idx = docCtrl.doc.indexOfBlock(id);
+      if (idx > 0) {
+        final prevBlock = docCtrl.doc.blocks[idx - 1];
+        focusBlock(prevBlock.id, offset: prevBlock.source.length);
+      }
+      return true;
+    }
+
+    // Backspace at the start of an HR deletes the HR itself.
+    if (block.kind == BlockKind.thematicBreak) {
+      final idx = docCtrl.doc.indexOfBlock(id);
+      if (idx < 0) return true;
+      docCtrl.spliceBlocks(
+        index: idx, before: [block], after: [], kind: EditKind.merge,
+        caretBefore: _snap(sel),
+      );
+      if (idx > 0) {
+        final prevBlock = docCtrl.doc.blocks[idx - 1];
+        focusBlock(prevBlock.id, offset: prevBlock.source.length);
+      } else if (docCtrl.doc.blocks.isNotEmpty) {
+        focusBlock(docCtrl.doc.blocks.first.id);
+      }
+      return true;
+    }
+
+    // Stage 2: merge with the previous block.
+    final i = docCtrl.doc.indexOfBlock(id);
+    if (i <= 0) return i < 0;
+    final prev = docCtrl.doc.blocks[i - 1];
+
+    const opaque = {
+      BlockKind.fencedCode,
+      BlockKind.indentedCode,
+      BlockKind.mathBlock,
+      BlockKind.table,
+      BlockKind.html,
+      BlockKind.frontMatter,
+    };
+
+    if (prev.kind == BlockKind.thematicBreak && text.isNotEmpty) {
+      // Backspace into an HR deletes the HR itself.
+      docCtrl.spliceBlocks(
+        index: i - 1, before: [prev, block], after: [block],
+        kind: EditKind.merge,
+        caretBefore: _snap(sel), caretAfter: CaretSnapshot(id, 0),
+      );
+      focusBlock(id, offset: 0);
+      return true;
+    }
+    if (opaque.contains(prev.kind)) {
+      if (text.isEmpty) {
+        docCtrl.spliceBlocks(
+          index: i - 1, before: [prev, block], after: [prev],
+          kind: EditKind.merge,
+          caretBefore: _snap(sel),
+          caretAfter: CaretSnapshot(prev.id, prev.source.length),
+        );
+      }
+      focusBlock(prev.id, offset: prev.source.length);
+      return true;
+    }
+
+    // Text-bearing previous block: concatenate sources.
+    final merged = prev.source + text;
+    final mergedBlock = Block(
+      id: prev.id,
+      kind: deriveSingleKind(merged) ?? prev.kind,
+      source: merged,
+      blankLinesBefore: prev.blankLinesBefore,
+    );
+    docCtrl.spliceBlocks(
+      index: i - 1, before: [prev, block], after: [mergedBlock],
+      kind: EditKind.merge,
+      caretBefore: _snap(sel),
+      caretAfter: CaretSnapshot(prev.id, prev.source.length),
+    );
+    focusBlock(prev.id, offset: prev.source.length);
+    return true;
+  }
+
+  /// Forward-delete at end of block: §2.2 stage 2 with roles swapped —
+  /// the next block merges into this one, opaque blocks never merge.
+  bool handleDeleteAtEnd() {
+    final block = focusedBlock;
+    final id = _focusedBlockId;
+    if (block == null || id == null) return false;
+    final sel = editing.selection;
+    if (!sel.isCollapsed || sel.baseOffset != editing.text.length) return false;
+    final i = docCtrl.doc.indexOfBlock(id);
+    if (i < 0 || i >= docCtrl.doc.blocks.length - 1) return false;
+    _materializeEphemeral();
+    final next = docCtrl.doc.blocks[i + 1];
+    final caret = editing.text.length;
+
+    // Forward-delete before an HR removes the HR itself.
+    if (next.kind == BlockKind.thematicBreak) {
+      docCtrl.spliceBlocks(
+        index: i + 1, before: [next], after: [], kind: EditKind.merge,
+        caretBefore: _snap(sel), caretAfter: CaretSnapshot(id, caret),
+      );
+      return true;
+    }
+
+    const opaque = {
+      BlockKind.fencedCode,
+      BlockKind.indentedCode,
+      BlockKind.mathBlock,
+      BlockKind.table,
+      BlockKind.html,
+      BlockKind.frontMatter,
+    };
+    if (opaque.contains(next.kind)) {
+      // Never glue an opaque block's source into prose. An empty current
+      // paragraph is simply removed, focus moving into the opaque block.
+      if (editing.text.isEmpty) {
+        docCtrl.spliceBlocks(
+          index: i, before: [block], after: [], kind: EditKind.merge,
+          caretBefore: _snap(sel), caretAfter: CaretSnapshot(next.id, 0),
+        );
+        focusBlock(next.id, offset: 0);
+      }
+      return true;
+    }
+
+    // Lists/quotes surrender their first line's content; the rest stays.
+    if (next.kind == BlockKind.list || next.kind == BlockKind.blockquote) {
+      final lines = next.source.split('\n');
+      final first = next.kind == BlockKind.list
+          ? lines.first.replaceFirst(_listItemLineRe, '')
+          : lines.first.replaceFirst(RegExp(r'^ {0,3}(?:> ?)+'), '');
+      final rest = lines.sublist(1).join('\n');
+      final merged = editing.text + first;
+      docCtrl.spliceBlocks(
+        index: i,
+        before: [block, next],
+        after: [
+          Block(
+            id: id,
+            kind: deriveSingleKind(merged) ?? block.kind,
+            source: merged,
+            blankLinesBefore: block.blankLinesBefore,
+          ),
+          if (rest.isNotEmpty)
+            Block(kind: deriveSingleKind(rest) ?? next.kind, source: rest),
+        ],
+        kind: EditKind.merge,
+        caretBefore: _snap(sel),
+        caretAfter: CaretSnapshot(id, caret),
+      );
+      focusBlock(id, offset: caret);
+      return true;
+    }
+
+    // Paragraphs merge verbatim; headings surrender their text (their
+    // markers would otherwise appear as literal `#`s mid-paragraph).
+    final nextText =
+        next.kind == BlockKind.heading ? next.headingText : next.source;
+    final merged = editing.text + nextText;
+    final mergedBlock = Block(
+      id: id,
+      kind: deriveSingleKind(merged) ?? block.kind,
+      source: merged,
+      blankLinesBefore: block.blankLinesBefore,
+    );
+    docCtrl.spliceBlocks(
+      index: i, before: [block, next], after: [mergedBlock],
+      kind: EditKind.merge,
+      caretBefore: _snap(sel), caretAfter: CaretSnapshot(id, caret),
+    );
+    focusBlock(id, offset: caret);
+    return true;
+  }
+
+  // ---- Vertical caret transfer (§3.4) ----
+
+  bool moveVertical({required bool up}) {
+    final id = _focusedBlockId;
+    if (id == null) return false;
+    final i = docCtrl.doc.indexOfBlock(id);
+    if (i < 0) return false;
+    final targetIndex = up ? i - 1 : i + 1;
+    if (targetIndex < 0) return false;
+    if (targetIndex >= docCtrl.doc.blocks.length) {
+      if (!up) focusTail();
+      return !up;
+    }
+    final target = docCtrl.doc.blocks[targetIndex];
+    final x = goalX ?? _caretX();
+    goalX = x;
+    final offset = _offsetForX(target, x, lastLine: up);
+    focusBlock(target.id, offset: offset);
+    goalX = x; // focusBlock's caret-move handling cleared it
+    return true;
+  }
+
+  TextPainter _layoutFor(String text, BlockKind kind, {int headingLevel = 1}) {
+    final span = text.isEmpty
+        ? TextSpan(text: '', style: _theme.bodyStyle)
+        : _renderer.buildEditingSpan(text, kind, headingLevel: headingLevel);
+    final tp = TextPainter(
+      text: span,
+      textDirection: TextDirection.ltr,
+    );
+    tp.layout(maxWidth: contentWidth);
+    return tp;
+  }
+
+  double _caretX() {
+    final block = focusedBlock;
+    if (block == null) return 0;
+    final tp = _layoutFor(editing.text, block.kind,
+        headingLevel: block.headingLevel);
+    final pos = tp.getOffsetForCaret(
+        TextPosition(offset: editing.selection.baseOffset), Rect.zero);
+    tp.dispose();
+    return pos.dx;
+  }
+
+  /// Whether the caret is on the first/last visual line of the focused field.
+  bool caretOnEdgeLine({required bool first}) {
+    final block = focusedBlock;
+    if (block == null) return true;
+    final tp = _layoutFor(editing.text, block.kind,
+        headingLevel: block.headingLevel);
+    final lines = tp.computeLineMetrics();
+    if (lines.length <= 1) {
+      tp.dispose();
+      return true;
+    }
+    final caretY = tp
+        .getOffsetForCaret(
+            TextPosition(offset: editing.selection.baseOffset), Rect.zero)
+        .dy;
+    var acc = 0.0;
+    var lineIndex = 0;
+    for (var li = 0; li < lines.length; li++) {
+      if (caretY < acc + lines[li].height - 0.5) {
+        lineIndex = li;
+        break;
+      }
+      acc += lines[li].height;
+      lineIndex = li;
+    }
+    tp.dispose();
+    return first ? lineIndex == 0 : lineIndex == lines.length - 1;
+  }
+
+  int _offsetForX(Block target, double x, {required bool lastLine}) {
+    final tp = _layoutFor(target.source, target.kind,
+        headingLevel: target.headingLevel);
+    final lines = tp.computeLineMetrics();
+    double y = 0;
+    if (lastLine && lines.isNotEmpty) {
+      for (var li = 0; li < lines.length - 1; li++) {
+        y += lines[li].height;
+      }
+      y += lines.last.height / 2;
+    } else if (lines.isNotEmpty) {
+      y = lines.first.height / 2;
+    }
+    final offset = tp.getPositionForOffset(Offset(x, y)).offset;
+    tp.dispose();
+    return offset;
+  }
+
+  // ---- Formatting (§6) ----
+
+  static final _wordChar = RegExp(r'[\p{L}\p{N}_]', unicode: true);
+
+  void toggleInline(String m) {
+    final block = focusedBlock;
+    if (block == null || _focusedBlockId == null) return;
+    final text = editing.text;
+    var sel = editing.selection;
+    if (!sel.isValid) return;
+    final l = m.length;
+
+    if (sel.isCollapsed) {
+      final w = _wordRangeAt(text, sel.baseOffset);
+      if (w == null) {
+        final at = sel.baseOffset;
+        // Toggle-off an empty pair the caret sits inside.
+        if (at >= l &&
+            at + l <= text.length &&
+            text.substring(at - l, at) == m &&
+            text.substring(at, at + l) == m) {
+          replaceRange(at - l, at + l, '', caretAt: at - l);
+          return;
+        }
+        replaceRange(at, at, m + m, caretAt: at + l);
+        return;
+      }
+      sel = TextSelection(baseOffset: w.$1, extentOffset: w.$2);
+    }
+
+    var a = sel.start;
+    var b = sel.end;
+    while (a < b && text[a] == ' ') {
+      a++;
+    }
+    while (b > a && text[b - 1] == ' ') {
+      b--;
+    }
+    bool has(int at, String s) =>
+        at >= 0 && at + s.length <= text.length &&
+        text.substring(at, at + s.length) == s;
+
+    bool contextOk() {
+      if (m != '*') return true;
+      final beforeOk = a - l - 1 < 0 || text[a - l - 1] != '*';
+      final afterOk = b + l >= text.length || text[b + l] != '*';
+      return beforeOk && afterOk;
+    }
+
+    if (has(a - l, m) && has(b, m) && contextOk()) {
+      // Unwrap, markers just outside the selection.
+      final newText = text.replaceRange(b, b + l, '').replaceRange(a - l, a, '');
+      _replaceAllText(newText,
+          TextSelection(baseOffset: a - l, extentOffset: b - l));
+      return;
+    }
+    if (b - a >= 2 * l && has(a, m) && has(b - l, m)) {
+      // Unwrap, markers just inside.
+      final newText =
+          text.replaceRange(b - l, b, '').replaceRange(a, a + l, '');
+      _replaceAllText(newText, TextSelection(baseOffset: a, extentOffset: b - 2 * l));
+      return;
+    }
+    final newText = text.replaceRange(b, b, m).replaceRange(a, a, m);
+    _replaceAllText(newText, TextSelection(baseOffset: a + l, extentOffset: b + l));
+  }
+
+  (int, int)? _wordRangeAt(String text, int at) {
+    var a = at;
+    var b = at;
+    while (a > 0 && _wordChar.hasMatch(text[a - 1])) {
+      a--;
+    }
+    while (b < text.length && _wordChar.hasMatch(text[b])) {
+      b++;
+    }
+    return b > a ? (a, b) : null;
+  }
+
+  void _replaceAllText(String newText, TextSelection sel) {
+    final id = _focusedBlockId;
+    final block = focusedBlock;
+    if (id == null || block == null) return;
+    _materializeEphemeral();
+    final before = _snap(editing.selection);
+    _setEditingValue(block, TextEditingValue(
+        text: newText, selection: _clampSelection(sel, newText.length)));
+    docCtrl.changeBlockSource(id, newText,
+        kind: EditKind.blockOp, caretBefore: before, caretAfter: _snap(sel));
+  }
+
+  void toggleBold() => toggleInline('**');
+  void toggleItalic() => toggleInline('*');
+  void toggleCode() => toggleInline('`');
+  void toggleStrikethrough() => toggleInline('~~');
+
+  void insertLink() {
+    final text = editing.text;
+    final sel = editing.selection;
+    if (!sel.isValid || focusedBlock == null) return;
+    if (sel.isCollapsed) {
+      replaceRange(sel.baseOffset, sel.baseOffset, '[]()',
+          caretAt: sel.baseOffset + 1);
+      return;
+    }
+    final selected = text.substring(sel.start, sel.end);
+    if (RegExp(r'^https?://\S+$').hasMatch(selected)) {
+      final replacement = '[]($selected)';
+      replaceRange(sel.start, sel.end, replacement, caretAt: sel.start + 1);
+    } else {
+      final replacement = '[$selected]()';
+      replaceRange(sel.start, sel.end, replacement,
+          caretAt: sel.start + replacement.length - 1);
+    }
+  }
+
+  /// Cmd+1..6 sets the heading level; Cmd+0 (or the current level again)
+  /// makes it a paragraph. Paragraph/heading blocks only.
+  void setHeadingLevel(int n) {
+    final block = focusedBlock;
+    if (block == null) return;
+    if (block.kind != BlockKind.paragraph && block.kind != BlockKind.heading) {
+      return;
+    }
+    var text = editing.text;
+    final caret = editing.selection.baseOffset;
+    var stripped = text;
+    if (block.kind == BlockKind.heading && block.isSetextHeading) {
+      final lines = text.split('\n');
+      stripped = lines.sublist(0, lines.length - 1).join('\n');
+    } else {
+      stripped = text.replaceFirst(RegExp(r'^ {0,3}#{1,6}[ \t]*'), '');
+    }
+    final currentLevel =
+        block.kind == BlockKind.heading ? block.headingLevel : 0;
+    final targetLevel = (n == 0 || n == currentLevel) ? 0 : n;
+    final prefix = targetLevel == 0 ? '' : '${'#' * targetLevel} ';
+    final newText = prefix + stripped;
+    final delta = newText.length - text.length;
+    _convertTo(newText, (caret + delta).clamp(prefix.length, newText.length));
+  }
+
+  /// Toggles `[ ]`/`[x]` on a task-list line — works on RENDERED blocks
+  /// (checkbox click) without stealing focus.
+  void toggleTask(String blockId, int lineIndex) {
+    final block = docCtrl.doc.blockById(blockId);
+    if (block == null) return;
+    final lines = block.source.split('\n');
+    if (lineIndex < 0 || lineIndex >= lines.length) return;
+    final line = lines[lineIndex];
+    final m = RegExp(r'^(\s*(?:[-*+]|\d{1,9}[.)])\s+\[)([ xX])(\])').firstMatch(line);
+    if (m == null) return;
+    final checked = m.group(2) != ' ';
+    lines[lineIndex] =
+        line.replaceRange(m.start + m.group(1)!.length, m.end - 1, checked ? ' ' : 'x');
+    docCtrl.changeBlockSource(blockId, lines.join('\n'),
+        kind: EditKind.blockOp);
+    if (blockId == _focusedBlockId) {
+      final b = docCtrl.doc.blockById(blockId);
+      if (b != null) {
+        _setEditingValue(b, TextEditingValue(
+            text: b.source,
+            selection: _clampSelection(editing.selection, b.source.length)));
+      }
+    }
+  }
+
+  // ---- Undo / redo ----
+
+  void undo() => _applyHistory(docCtrl.undo());
+
+  void redo() => _applyHistory(docCtrl.redo());
+
+  void _applyHistory(CaretSnapshot? caret) {
+    if (caret == null) {
+      // Nothing to restore; if a block is focused re-sync its text.
+      final b = focusedBlock;
+      if (b != null) {
+        _setEditingValue(b, TextEditingValue(
+            text: b.source,
+            selection: _clampSelection(editing.selection, b.source.length)));
+      }
+      notifyListeners();
+      return;
+    }
+    final block = docCtrl.doc.blockById(caret.blockId);
+    if (block == null) {
+      blur();
+      return;
+    }
+    focusBlock(caret.blockId,
+        selection: TextSelection(
+            baseOffset: caret.base, extentOffset: caret.extent));
+  }
+
+  @override
+  void dispose() {
+    editing.removeListener(_onEditingChanged);
+    focusNode.removeListener(_onFocusNodeChanged);
+    editing.dispose();
+    focusNode.dispose();
+    sourceModeEnabled.dispose();
+    findVisible.dispose();
+    for (final n in _focusFlags.values) {
+      n.dispose();
+    }
+    super.dispose();
+  }
+}

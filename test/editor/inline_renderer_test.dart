@@ -1,0 +1,100 @@
+import 'package:flutter/widgets.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:readme/src/document/block.dart';
+import 'package:readme/src/document/block_splitter.dart';
+import 'package:readme/src/editor/inline_renderer.dart';
+import 'package:readme/src/editor/offset_runs.dart';
+import 'package:readme/src/theme/readme_theme.dart';
+
+ReadmeTheme theme() => ReadmeTheme.fromJson('t', {
+      'blockquoteBorder': '#dfe2e5',
+      'link': '#4183C4',
+      'linkHover': '#4183C4',
+      'hr': '#e7e7e7',
+      'checkboxAccent': '#4183C4',
+      'sidebarBackground': '#fafafa',
+      'sidebarForeground': '#777777',
+      'sidebarActiveBackground': '#eeeeee',
+    });
+
+String spanText(InlineSpan span) {
+  final buf = StringBuffer();
+  span.visitChildren((s) {
+    if (s is TextSpan && s.text != null) buf.write(s.text);
+    if (s is WidgetSpan) buf.write('￼');
+    return true;
+  });
+  return buf.toString();
+}
+
+void main() {
+  final r = InlineRenderer(theme());
+  final base = theme().bodyStyle;
+
+  group('renderInline', () {
+    test('hides markers and produces contiguous runs', () {
+      const src = 'a **bold** and `code` end';
+      final res = r.renderInline(src, baseStyle: base);
+      expect(res.renderedText, 'a bold and code end');
+      expect(spanText(res.span), res.renderedText);
+
+      // Runs must cover the whole source contiguously.
+      var s = 0;
+      for (final run in res.runs) {
+        expect(run.sStart, s, reason: 'gap before $run');
+        expect(run.sEnd, greaterThanOrEqualTo(run.sStart));
+        s = run.sEnd;
+      }
+      expect(s, src.length);
+    });
+
+    test('editing span always preserves every character', () {
+      for (final src in [
+        '**b** _i_ `c` ~~s~~ [l](u) ![img](x) <https://a.b> \\* text',
+        '# heading with **bold**',
+        '> quoted *line*\n> two',
+        '- item one\n  - nested `two`',
+        '| a | **b** |\n|---|---|\n| c | d |',
+        '```dart\ncode **not bold**\n```',
+      ]) {
+        // Editing spans are built per kind; use the renderer's internal path
+        // through buildEditingSpan for each derived kind.
+        final kind = deriveSingleKind(src) ?? BlockKind.paragraph;
+        final span = r.buildEditingSpan(src, kind);
+        expect(spanText(span), src, reason: 'kind=$kind src=$src');
+      }
+    });
+
+    test('renderedToSource maps clicks through hidden markers', () {
+      const src = 'x **bold** y';
+      final res = r.renderInline(src, baseStyle: base);
+      // rendered: 'x bold y'
+      //            01234567
+      expect(renderedToSource(res.runs, 0), 0); // before 'x'
+      // Boundary between 'x ' and 'bold': either side of the ** is valid.
+      expect(renderedToSource(res.runs, 2), anyOf(2, 4));
+      expect(renderedToSource(res.runs, 3), 5); // inside 'bold'
+      expect(renderedToSource(res.runs, 6), 8); // after 'd'
+      expect(renderedToSource(res.runs, 8), 12); // end
+    });
+
+    test('sourceToRendered collapses marker positions', () {
+      const src = 'x **bold** y';
+      final res = r.renderInline(src, baseStyle: base);
+      expect(sourceToRendered(res.runs, 4), 2); // 'b'
+      expect(sourceToRendered(res.runs, 3), 2); // inside '**' → start of bold
+    });
+
+    test('link renders label only', () {
+      const src = 'see [docs](https://x.dev) now';
+      final res = r.renderInline(src, baseStyle: base);
+      expect(res.renderedText, 'see docs now');
+    });
+
+    test('image without builder falls back to alt-ish text', () {
+      const src = '![alt](u.png)';
+      final res = r.renderInline(src, baseStyle: base);
+      expect(res.renderedText, src); // shown literally when no image pipeline
+    });
+  });
+}
