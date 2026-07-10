@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:readme/src/document/block.dart';
 import 'package:readme/src/document/document_controller.dart';
+import 'package:readme/src/editor/blocks/table_model.dart';
 import 'package:readme/src/editor/editor_controller.dart';
 import 'package:readme/src/theme/readme_theme.dart';
 
@@ -630,6 +631,61 @@ void main() {
       editor.focusBlock(doc.doc.blocks.first.id, offset: 2);
       editor.openLinkAtCaret();
       expect(opened, ['https://x.dev', 'https://caret.dev']);
+    });
+  });
+
+  group('in-place table cells', () {
+    test('updateActiveTableCell rewrites the cell and prettifies', () {
+      doc.loadText('| a | b |\n|---|---|\n| c | d |');
+      final id = doc.doc.blocks.first.id;
+      editor.focusTableCell(id, 2, 0); // 'c'
+      editor.updateActiveTableCell('changed', 7);
+      final lines = doc.doc.blocks.single.source.split('\n');
+      expect(lines[2], '| changed | d    |');
+      expect(lines[0], '| a       | b    |'); // whole table re-padded
+      expect(lines[1], '| ------- | ---- |');
+      // Caret sits at the end of the new cell text.
+      final (a, _) = TableShape(doc.doc.blocks.single.source).rangeOf(2, 0);
+      expect(editor.editing.selection.baseOffset, a + 7);
+    });
+
+    test('focusTableCell selects the target cell content', () {
+      doc.loadText('| a | bb |\n|---|---|\n| c | d |');
+      final id = doc.doc.blocks.first.id;
+      editor.focusTableCell(id, 0, 1);
+      final sel = editor.editing.selection;
+      expect(editor.editing.text.substring(sel.start, sel.end), 'bb');
+      expect(editor.activeTableCell(), (0, 1));
+    });
+
+    test('vertical cell movement skips the delimiter and leaves at edges',
+        () {
+      doc.loadText('para\n\n| a | b |\n|---|---|\n| c | d |');
+      final table = doc.doc.blocks[1];
+      editor.focusTableCell(table.id, 0, 0);
+      editor.moveTableCellVertically(up: false); // header -> first data row
+      expect(editor.activeTableCell(), (2, 0));
+      editor.moveTableCellVertically(up: true); // back up to the header
+      expect(editor.activeTableCell(), (0, 0));
+      editor.moveTableCellVertically(up: true); // leaves the table
+      expect(editor.focusedBlockId, doc.doc.blocks[0].id);
+    });
+
+    test('blurring a table prettifies its source', () {
+      doc.loadText('|a|b|\n|---|---|\n|c|d|\n\nafter');
+      final table = doc.doc.blocks[0];
+      editor.focusTableCell(table.id, 0, 0);
+      editor.focusBlock(doc.doc.blocks[1].id);
+      expect(doc.doc.blocks[0].source,
+          '| a    | b    |\n| ---- | ---- |\n| c    | d    |');
+    });
+
+    test('insertTable produces prettified source', () {
+      doc.loadText('');
+      editor.focusBlock(doc.doc.blocks.first.id);
+      editor.insertTable(1, 2);
+      expect(doc.doc.blocks.single.source,
+          '|      |      |\n| ---- | ---- |\n|      |      |');
     });
   });
 

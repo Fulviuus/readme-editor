@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 
 import '../document/block.dart';
 import 'block_padding.dart';
+import 'blocks/table_block.dart';
 import 'editor_controller.dart';
 
 class EditingBlock extends StatefulWidget {
@@ -150,6 +151,16 @@ class _EditingBlockState extends State<EditingBlock> {
     final editor = widget.editor;
     final theme = editor.theme;
     final block = widget.block;
+
+    // Tables never drop to raw source in the live editor: the focused table
+    // stays rendered and the active cell is edited in place.
+    if (block.kind == BlockKind.table) {
+      return Padding(
+        padding: blockPadding(block, theme),
+        child: TableBlockView(block: block, editor: editor, editing: true),
+      );
+    }
+
     final style = editor.renderer.editingBaseStyle(block);
     final isOnlyEmptyBlock = block.source.isEmpty &&
         editor.docCtrl.doc.blocks.length == 1;

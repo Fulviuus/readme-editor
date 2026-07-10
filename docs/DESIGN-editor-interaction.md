@@ -394,7 +394,7 @@ Spec (focused table block; pipes and delimiter row visible, dimmed by `buildText
 - **Click on a rendered cell** (`row`, `col` from the Table widget hit test): focus block, caret at `cellRange(row, col).start`.
 - **Deleting the delimiter row** leaves the block a table until blur; on blur, if the source no longer matches the table shape (§1 rule 6), the block is re-typed via `scanBlockLocal` (may become paragraph) — one `typeChange` DocEdit.
 
-**DECISION:** v1 tables are edited as raw source in the standard focused TextField; Tab/Shift-Tab select next/previous cell content (skipping the delimiter row, auto-appending rows at the tail), Enter moves down a row, Shift+Enter inserts `<br>`; no cell-grid editor.
+**DECISION (revised 2026-07-11):** tables are edited IN PLACE in the rendered table — the focused table stays a rendered grid and the active cell hosts a single-line TextField over the CELL text only; raw pipe source never appears in the live editor. Tab/Shift-Tab move cells (selecting the target cell's content, auto-appending rows at the tail), Enter moves down a row, Shift+Enter inserts `<br>` in the cell, ArrowUp/Down move rows (leaving the table at the edges), ArrowLeft/Right at cell-text boundaries move cells, Escape blurs. Cell edits splice into the block source, which is auto-prettified (aligned pipes, padded cells, `----` delimiters — see prettifyTable in blocks/table_model.dart) on every cell commit and on blur, so source mode and saved files always show clean aligned tables.
 
 ---
 

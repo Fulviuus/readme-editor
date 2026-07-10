@@ -11,6 +11,7 @@ import '../document/block.dart';
 import '../document/block_splitter.dart';
 import '../document/document_controller.dart';
 import '../theme/readme_theme.dart';
+import 'blocks/table_model.dart';
 import 'inline_renderer.dart';
 import 'inline_tokenizer.dart';
 import 'markdown_editing_controller.dart';
@@ -144,6 +145,7 @@ class EditorController extends ChangeNotifier {
     final previous = _focusedBlockId;
     if (previous != null && previous != id) {
       _discardEphemeralIfAbandoned(previous);
+      _prettifyTableBlock(previous);
     }
     _focusedBlockId = id;
     final sel = selection ??
@@ -176,6 +178,7 @@ class EditorController extends ChangeNotifier {
     _focusFlags[previous]?.value = false;
     docCtrl.sealUndoGroup();
     _discardEphemeralIfAbandoned(previous);
+    _prettifyTableBlock(previous);
     notifyListeners();
   }
 
@@ -1439,7 +1442,7 @@ class EditorController extends ChangeNotifier {
     final header = '|${'   |' * c}';
     final delimiter = '|${' --- |' * c}';
     final dataRows = List.filled(r, '|${'   |' * c}');
-    final source = [header, delimiter, ...dataRows].join('\n');
+    final source = prettifyTable([header, delimiter, ...dataRows].join('\n'));
     final block = focusedBlock;
     if (block != null && block.kind == BlockKind.paragraph &&
         editing.text.isEmpty) {
@@ -1552,6 +1555,98 @@ class EditorController extends ChangeNotifier {
         .dy;
     tp.dispose();
     return dy;
+  }
+
+  // ---- In-place table cell editing (Typora-style) ----
+
+  /// (row, col) of the active cell in the focused table, derived from the
+  /// shared editing selection. Rows are source lines (1 = delimiter).
+  (int, int)? activeTableCell() {
+    final block = focusedBlock;
+    if (block == null || block.kind != BlockKind.table) return null;
+    final (row, col) = TableShape(editing.text)
+        .cellForOffset(editing.selection.baseOffset);
+    return (row == 1 ? 2 : row, col);
+  }
+
+  /// Focuses [row]/[col] of the focused table. [selectContent] selects the
+  /// whole cell (typing replaces it); otherwise the caret goes to
+  /// [localCaret] within the cell.
+  void focusTableCell(String blockId, int row, int col,
+      {bool selectContent = true, int localCaret = 0}) {
+    final block = docCtrl.doc.blockById(blockId);
+    if (block == null || block.kind != BlockKind.table) return;
+    final shape = TableShape(block.source);
+    var r = row.clamp(0, shape.lineCount - 1);
+    if (r == 1) r = 2;
+    final (a, b) = shape.rangeOf(r, col);
+    focusBlock(blockId,
+        selection: selectContent
+            ? TextSelection(baseOffset: a, extentOffset: b)
+            : TextSelection.collapsed(
+                offset: (a + localCaret).clamp(a, b)));
+  }
+
+  /// Rewrites the active cell's content to [newText] with the caret at
+  /// [localCaret], re-prettifying the whole table so the source stays
+  /// aligned. The active cell survives the reformat.
+  void updateActiveTableCell(String newText, int localCaret) {
+    final id = _focusedBlockId;
+    final cell = activeTableCell();
+    if (id == null || cell == null) return;
+    _materializeEphemeral();
+    final (row, col) = cell;
+    final shape = TableShape(editing.text);
+    final (a, b) = shape.rangeOf(row, col);
+    final raw = editing.text.replaceRange(a, b, newText);
+    final pretty = prettifyTable(raw);
+    final (na, nb) = TableShape(pretty).rangeOf(row, col);
+    final caret = (na + localCaret).clamp(na, nb);
+    final block = focusedBlock;
+    if (block == null) return;
+    final before = _snap(editing.selection);
+    _setEditingValue(block, TextEditingValue(
+        text: pretty, selection: TextSelection.collapsed(offset: caret)));
+    docCtrl.changeBlockSource(id, pretty,
+        kind: EditKind.typing,
+        caretBefore: before,
+        caretAfter: _snap(editing.selection),
+        committedChar:
+            newText.isNotEmpty && localCaret > 0 && localCaret <= newText.length
+                ? newText[localCaret - 1]
+                : null);
+  }
+
+  /// Moves the active cell by rows (skipping the delimiter row); appends a
+  /// row when moving past the last one. Leaving the table top/bottom moves
+  /// block focus instead.
+  void moveTableCellVertically({required bool up}) {
+    final id = _focusedBlockId;
+    final cell = activeTableCell();
+    if (id == null || cell == null) return;
+    final (row, col) = cell;
+    var target = up ? row - 1 : row + 1;
+    if (target == 1) target = up ? 0 : 2;
+    final shape = TableShape(editing.text);
+    if (target < 0) {
+      moveVertical(up: true);
+      return;
+    }
+    if (target >= shape.lineCount) {
+      moveVertical(up: false);
+      return;
+    }
+    focusTableCell(id, target, col);
+  }
+
+  /// Prettifies a table block's source in place (used on blur so the stored
+  /// markdown always looks clean in source mode and on disk).
+  void _prettifyTableBlock(String blockId) {
+    final block = docCtrl.doc.blockById(blockId);
+    if (block == null || block.kind != BlockKind.table) return;
+    final pretty = prettifyTable(block.source);
+    if (pretty == block.source) return;
+    docCtrl.changeBlockSource(blockId, pretty, kind: EditKind.blockOp);
   }
 
   // ---- Task status (Paragraph > Task Status) ----
