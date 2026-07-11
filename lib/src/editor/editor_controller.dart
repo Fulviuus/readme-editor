@@ -355,6 +355,35 @@ class EditorController extends ChangeNotifier {
     _scheduleSpellCheck();
   }
 
+  static final _lookUpWordChar = RegExp(r"[\p{L}\p{N}'’-]", unicode: true);
+
+  /// The selected text, or the word around the caret, in the focused block.
+  String? currentWordOrSelection() {
+    if (_focusedBlockId == null) return null;
+    final v = editing.value;
+    final sel = v.selection;
+    if (!sel.isValid) return null;
+    if (!sel.isCollapsed) {
+      final t = v.text.substring(sel.start, sel.end).trim();
+      return t.isEmpty ? null : t;
+    }
+    final text = v.text;
+    var s = sel.baseOffset, e = sel.baseOffset;
+    while (s > 0 && _lookUpWordChar.hasMatch(text[s - 1])) {
+      s--;
+    }
+    while (e < text.length && _lookUpWordChar.hasMatch(text[e])) {
+      e++;
+    }
+    return e <= s ? null : text.substring(s, e);
+  }
+
+  /// Edit > Look Up: system dictionary popover for the current word.
+  void lookUpSelection() {
+    final word = currentWordOrSelection();
+    if (word != null) SpellChecker.define(word);
+  }
+
   CaretSnapshot? _snap(TextSelection sel) => _focusedBlockId == null
       ? null
       : CaretSnapshot(_focusedBlockId!, sel.baseOffset, sel.extentOffset);

@@ -15,6 +15,7 @@ import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../document/document_controller.dart';
+import 'file_history.dart';
 import 'file_io.dart';
 
 class WorkspaceController extends ChangeNotifier {
@@ -182,6 +183,7 @@ class WorkspaceController extends ChangeNotifier {
     lastError = null;
     docCtrl.markSavedAt(revision);
     await _addRecentFile(path);
+    unawaited(recordSnapshot(path, text));
     return true;
   }
 
@@ -211,6 +213,7 @@ class WorkspaceController extends ChangeNotifier {
     docCtrl.filePath = path;
     docCtrl.markSavedAt(revision);
     await _addRecentFile(path);
+    unawaited(recordSnapshot(path, text));
     notifyListeners();
     return true;
   }

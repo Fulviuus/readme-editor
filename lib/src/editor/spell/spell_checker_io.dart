@@ -68,4 +68,16 @@ class SpellChecker {
       _available = false;
     }
   }
+
+  /// Shows the system dictionary popover for [word] (Look Up).
+  static Future<void> define(String word) async {
+    if (!_available) return;
+    try {
+      await _channel.invokeMethod<void>('define', {'word': word});
+    } on PlatformException {
+      // ignore
+    } on MissingPluginException {
+      _available = false;
+    }
+  }
 }

@@ -86,6 +86,17 @@ class MainFlutterWindow: NSWindow {
           checker.ignoreWord(word, inSpellDocumentWithTag: 0)
         }
         result(nil)
+      case "define":
+        // Dictionary popover at the current mouse location (Look Up).
+        if let word = args?["word"] as? String,
+           let view = self.contentView {
+          let point = view.convert(
+            self.mouseLocationOutsideOfEventStream, from: nil)
+          view.showDefinition(
+            for: NSAttributedString(string: word),
+            at: point)
+        }
+        result(nil)
       default:
         result(FlutterMethodNotImplemented)
       }

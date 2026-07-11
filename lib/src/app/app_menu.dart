@@ -25,6 +25,8 @@ class AppMenuCallbacks {
     required this.closeTab,
     required this.nextTab,
     required this.previousTab,
+    required this.revertTo,
+    required this.checkForUpdates,
     required this.openFile,
     required this.openFolder,
     required this.openRecent,
@@ -68,6 +70,10 @@ class AppMenuCallbacks {
   final VoidCallback closeTab;
   final VoidCallback nextTab;
   final VoidCallback previousTab;
+
+  /// File > Revert To…: restore a recorded save snapshot.
+  final VoidCallback revertTo;
+  final VoidCallback checkForUpdates;
   final VoidCallback openFile;
   final VoidCallback openFolder;
   final void Function(String path) openRecent;
@@ -134,6 +140,9 @@ List<PlatformMenu> buildPlatformMenus({
         PlatformMenuItemGroup(
           members: [
             PlatformMenuItem(label: 'About readme', onSelected: actions.about),
+            PlatformMenuItem(
+                label: 'Check for Updates…',
+                onSelected: actions.checkForUpdates),
             PlatformMenuItem(
               label: 'Settings…',
               shortcut:
@@ -285,6 +294,8 @@ List<PlatformMenu> buildPlatformMenus({
               PlatformMenuItem(
                   label: 'Reveal in Finder', onSelected: actions.revealFile),
               PlatformMenuItem(
+                  label: 'Revert To…', onSelected: actions.revertTo),
+              PlatformMenuItem(
                   label: 'Duplicate', onSelected: actions.duplicateFile),
               PlatformMenuItem(
                   label: 'Rename…', onSelected: actions.renameFile),
@@ -401,6 +412,16 @@ List<PlatformMenu> buildPlatformMenus({
                   const SingleActivator(LogicalKeyboardKey.keyA, meta: true),
               onSelected: () => _dispatchTextIntent(
                   const SelectAllTextIntent(SelectionChangedCause.keyboard)),
+            ),
+          ],
+        ),
+        PlatformMenuItemGroup(
+          members: [
+            PlatformMenuItem(
+              label: 'Look Up',
+              shortcut: const SingleActivator(LogicalKeyboardKey.keyD,
+                  meta: true, control: true),
+              onSelected: editor.lookUpSelection,
             ),
           ],
         ),

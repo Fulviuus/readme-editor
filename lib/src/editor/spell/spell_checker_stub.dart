@@ -13,4 +13,6 @@ class SpellChecker {
   static Future<void> learn(String word) async {}
 
   static Future<void> ignore(String word) async {}
+
+  static Future<void> define(String word) async {}
 }

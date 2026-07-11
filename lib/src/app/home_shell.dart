@@ -28,10 +28,12 @@ import '../editor/rendered_block.dart';
 import '../editor/source_view.dart';
 import '../theme/readme_theme.dart';
 import '../theme/theme_manager.dart';
+import '../workspace/file_history.dart';
 import '../workspace/file_io.dart' show copyIntoFolder, writeBinaryFile;
 import '../workspace/html_export.dart';
 import '../workspace/pandoc.dart';
 import '../workspace/pdf_export.dart';
+import '../workspace/update_check.dart';
 import '../workspace/workspace_controller.dart';
 import 'app_menu.dart';
 import 'doc_tabs.dart';
@@ -307,6 +309,84 @@ class _HomeShellState extends State<HomeShell> {
       await _workspace.openPath(path);
       _surfaceWorkspaceError();
     }
+  }
+
+  /// File > Revert To…: pick one of the recorded save snapshots and restore
+  /// it as a single undoable edit.
+  Future<void> _revertTo() async {
+    final path = _doc.filePath;
+    if (path == null) return;
+    final entries = await listSnapshots(path);
+    if (!mounted) return;
+    if (entries.isEmpty) {
+      _showErrorDialog('No saved versions',
+          'No save history has been recorded for this document yet.');
+      return;
+    }
+    String stamp(DateTime d) {
+      String two(int n) => n.toString().padLeft(2, '0');
+      return '${d.year}-${two(d.month)}-${two(d.day)} '
+          '${two(d.hour)}:${two(d.minute)}:${two(d.second)}';
+    }
+
+    final picked = await showDialog<HistoryEntry>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Revert To'),
+        children: [
+          for (final e in entries)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(context).pop(e),
+              child: Text('${stamp(e.savedAt)}   ·   ${e.sizeBytes} bytes'),
+            ),
+        ],
+      ),
+    );
+    if (picked == null || !mounted) return;
+    try {
+      final text = await readSnapshot(picked.path);
+      _editor.commitSourceMode?.call();
+      _doc.replaceAll(text);
+    } catch (e) {
+      _showErrorDialog('Revert failed', '$e');
+    }
+  }
+
+  /// readme > Check for Updates…
+  Future<void> _checkForUpdates() async {
+    final result = await checkForUpdates();
+    if (!mounted) return;
+    final (title, message, url) = switch (result) {
+      UpToDate() => (
+          'Up to date',
+          'readme $appVersion is the newest version.',
+          null
+        ),
+      UpdateAvailable(:final version, :final url) => (
+          'Update available',
+          'readme $version is available (you have $appVersion).',
+          url
+        ),
+      UpdateCheckFailed(:final reason) => ('Could not check', reason, null),
+    };
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          if (url != null)
+            TextButton(
+              onPressed: () => launchUrl(Uri.parse(url)),
+              child: const Text('View Release'),
+            ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// File > Import…: any format pandoc reads, converted to markdown and
@@ -819,6 +899,8 @@ class _HomeShellState extends State<HomeShell> {
             _selectTab((_tabs.activeIndex + 1) % _tabs.length),
         previousTab: () => _selectTab(
             (_tabs.activeIndex - 1 + _tabs.length) % _tabs.length),
+        revertTo: _revertTo,
+        checkForUpdates: _checkForUpdates,
         paste: _paste,
         importFile: _importFile,
         exportPandoc: _exportPandoc,
