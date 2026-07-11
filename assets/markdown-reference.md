@@ -76,4 +76,6 @@ The source stays aligned automatically.
 - `$tex$` renders inline math, like $e^{i\pi} + 1 = 0$. Delimiters must hug
   the TeX (no space just inside), so prices like $5 stay plain text.
 - `[TOC]` renders a live table of contents.
+- A fenced code block with language `mermaid` renders as a diagram
+  (flowcharts, sequence diagrams, and every other mermaid type).
 - A `---` fenced block at the very top is YAML front matter.

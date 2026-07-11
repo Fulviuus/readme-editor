@@ -13,6 +13,7 @@ import '../theme/readme_theme.dart';
 import 'block_padding.dart';
 import 'blocks/code_block.dart';
 import 'blocks/list_block.dart';
+import 'blocks/mermaid_block.dart';
 import 'blocks/table_block.dart';
 import 'editor_controller.dart';
 import 'inline_renderer.dart' show LinkRange;
@@ -38,14 +39,24 @@ class RenderedBlock extends StatelessWidget {
       BlockKind.thematicBreak => _thematicBreak(theme),
       BlockKind.list => ListBlockView(block: block, editor: editor),
       BlockKind.table => TableBlockView(block: block, editor: editor),
-      BlockKind.fencedCode ||
-      BlockKind.indentedCode =>
-        CodeBlockView(block: block, editor: editor),
+      BlockKind.fencedCode || BlockKind.indentedCode => _code(),
       BlockKind.mathBlock => _mathBlock(theme),
       BlockKind.html => _verbatimBox(theme, label: 'html'),
       BlockKind.frontMatter => _verbatimBox(theme, label: 'front matter'),
     };
     return Padding(padding: blockPadding(block, theme), child: child);
+  }
+
+  /// A closed `mermaid` fence with content renders as a diagram; anything
+  /// else (other languages, half-typed fences) is a plain code block.
+  Widget _code() {
+    if (block.kind == BlockKind.fencedCode &&
+        block.fenceLanguage?.toLowerCase() == 'mermaid' &&
+        block.fenceIsClosed &&
+        block.codeBody.trim().isNotEmpty) {
+      return MermaidBlockView(block: block, editor: editor);
+    }
+    return CodeBlockView(block: block, editor: editor);
   }
 
   Widget _paragraph(ReadmeTheme theme) {

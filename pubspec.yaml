@@ -49,7 +49,7 @@ dependencies:
   pdf: ^3.13.0
   share_plus: ^13.2.0
   flutter_math_fork: ^0.7.4
-
+  flutter_inappwebview: ^6.1.5
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -77,6 +77,7 @@ flutter:
     - assets/welcome.md
     - assets/markdown-reference.md
     - assets/fonts/
+    - assets/js/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
