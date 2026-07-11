@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../document/block.dart';
+import 'block_padding.dart';
 import 'editing_block.dart';
 import 'editor_controller.dart';
 import 'rendered_block.dart';
@@ -146,14 +147,36 @@ class _BlockItem extends StatelessWidget {
   final Block block;
   final EditorController editor;
 
+  /// Clicks landing on the block's own vertical padding — the visual gap
+  /// between blocks — open a new line there. Content clicks never reach
+  /// this handler (the block's inner detectors win the gesture arena).
+  void _onGapTap(BuildContext context, TapUpDetails details) {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null) return;
+    final dy = box.globalToLocal(details.globalPosition).dy;
+    final pad = blockPadding(block, editor.theme);
+    final index = editor.docCtrl.doc.indexOfBlock(block.id);
+    if (index < 0) return;
+    if (dy <= pad.top) {
+      editor.focusGap(index);
+    } else if (dy >= box.size.height - pad.bottom) {
+      editor.focusGap(index + 1);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<bool>(
       valueListenable: editor.focusFlag(block.id),
       builder: (context, focused, _) {
-        final child = focused
+        Widget child = focused
             ? EditingBlock(block: block, editor: editor)
             : RenderedBlock(block: block, editor: editor);
+        child = GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTapUp: (d) => _onGapTap(context, d),
+          child: child,
+        );
         if (!editor.focusModeEnabled) return child;
         return AnimatedOpacity(
           duration: const Duration(milliseconds: 150),

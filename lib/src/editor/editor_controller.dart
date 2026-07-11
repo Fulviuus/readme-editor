@@ -235,6 +235,7 @@ class EditorController extends ChangeNotifier {
   void _discardEphemeralIfAbandoned(String id) {
     if (id != _ephemeralBlockId) return;
     _ephemeralBlockId = null;
+    _ephemeralNeedsRecord = false;
     final i = docCtrl.doc.indexOfBlock(id);
     if (i < 0) return;
     final b = docCtrl.doc.blocks[i];
@@ -246,14 +247,57 @@ class EditorController extends ChangeNotifier {
     }
   }
 
-  /// Any RECORDED edit touching the ephemeral tail makes it a real block —
+  /// Set for gap ephemerals (inserted MID-list): their insertion must be
+  /// recorded into history when they materialize, because an unrecorded
+  /// mid-list block shifts the indices of every older undo entry below it.
+  /// Tail ephemerals never need this — nothing sits below them.
+  bool _ephemeralNeedsRecord = false;
+
+  /// Any RECORDED edit touching the ephemeral makes it a real block —
   /// discarding it later (unrecorded) would desync the undo stack's splice
   /// indices and undo would corrupt the list. Called at the head of every
   /// mutating handler.
   void _materializeEphemeral() {
     if (_focusedBlockId != null && _focusedBlockId == _ephemeralBlockId) {
+      if (_ephemeralNeedsRecord) {
+        docCtrl.recordBlockInsertion(_ephemeralBlockId!);
+      }
       _ephemeralBlockId = null;
+      _ephemeralNeedsRecord = false;
     }
+  }
+
+  /// Click in the gap between two blocks: opens an empty paragraph at
+  /// [index] (before the block currently there). Ephemeral like
+  /// [focusTail]'s — abandoned untouched, it vanishes without a trace; a
+  /// neighbouring empty paragraph is reused instead of stacking new ones.
+  void focusGap(int index) {
+    final blocks = docCtrl.doc.blocks;
+    index = index.clamp(0, blocks.length);
+    bool emptyPara(Block b) =>
+        b.kind == BlockKind.paragraph && b.source.isEmpty;
+    if (index > 0 && emptyPara(blocks[index - 1])) {
+      focusBlock(blocks[index - 1].id);
+      return;
+    }
+    if (index < blocks.length && emptyPara(blocks[index])) {
+      focusBlock(blocks[index].id);
+      return;
+    }
+    if (index == blocks.length) {
+      focusTail();
+      return;
+    }
+    final para = Block(kind: BlockKind.paragraph, source: '');
+    docCtrl.spliceBlocks(
+        index: index,
+        before: const [],
+        after: [para],
+        kind: EditKind.blockOp,
+        record: false);
+    _ephemeralBlockId = para.id;
+    _ephemeralNeedsRecord = true;
+    focusBlock(para.id);
   }
 
   /// Click on the canvas below the last block (§8).
@@ -406,7 +450,11 @@ class EditorController extends ChangeNotifier {
     }
     goalX = null;
     _scheduleSpellCheck();
-    if (id == _ephemeralBlockId) _ephemeralBlockId = null;
+    if (id == _ephemeralBlockId) {
+      if (_ephemeralNeedsRecord) docCtrl.recordBlockInsertion(id);
+      _ephemeralBlockId = null;
+      _ephemeralNeedsRecord = false;
+    }
 
     final grew = v.text.length > old.text.length;
     // Multi-line changes (paste, and deletions that create a blank line
@@ -2428,9 +2476,21 @@ class EditorController extends ChangeNotifier {
 
   // ---- Undo / redo ----
 
-  void undo() => _applyHistory(docCtrl.undo());
+  /// A live gap ephemeral is unrecorded and mid-list, so history splices
+  /// would land on shifted indices — drop it before (or as) the operation.
+  /// For undo, removing the just-opened empty line IS the undo.
+  void undo() {
+    if (_ephemeralNeedsRecord && _ephemeralBlockId != null) {
+      blur();
+      return;
+    }
+    _applyHistory(docCtrl.undo());
+  }
 
-  void redo() => _applyHistory(docCtrl.redo());
+  void redo() {
+    if (_ephemeralNeedsRecord && _ephemeralBlockId != null) blur();
+    _applyHistory(docCtrl.redo());
+  }
 
   void _applyHistory(CaretSnapshot? caret) {
     if (caret == null) {

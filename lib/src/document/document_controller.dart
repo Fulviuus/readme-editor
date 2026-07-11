@@ -398,6 +398,35 @@ class DocumentController extends ChangeNotifier {
     );
   }
 
+  /// Retroactively records the insertion of [blockId] — an ephemeral block
+  /// that just received its first real edit — WITHOUT re-applying it, so
+  /// undo can remove the block and every older entry keeps valid indices.
+  /// The block must still be empty (its pre-edit state).
+  void recordBlockInsertion(String blockId) {
+    final i = _doc.indexOfBlock(blockId);
+    if (i < 0) return;
+    final neighbor = i > 0
+        ? _doc.blocks[i - 1]
+        : (_doc.blocks.length > 1 ? _doc.blocks[i + 1] : null);
+    final edit = DocEdit(
+      index: i,
+      before: const [],
+      after: [_doc.blocks[i]],
+      kind: EditKind.blockOp,
+      caretBefore: neighbor == null
+          ? null
+          : CaretSnapshot(neighbor.id, neighbor.source.length),
+      caretAfter: CaretSnapshot(blockId, 0),
+    );
+    _redoStack.clear();
+    _undoStack.add(edit);
+    if (_undoStack.length > _maxUndoDepth) _undoStack.removeAt(0);
+    // The following typing edit must never coalesce into this entry.
+    sealUndoGroup();
+    _revision++;
+    notifyListeners();
+  }
+
   /// Replaces the whole document (source-mode exit, Select-All overwrite).
   void replaceAll(String text, {CaretSnapshot? caretBefore}) {
     final old = List<Block>.of(_doc.blocks);

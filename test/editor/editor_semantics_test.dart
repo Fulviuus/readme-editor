@@ -928,4 +928,82 @@ void main() {
       expect(doc.doc.blocks.single.source.split('\n'), hasLength(4));
     });
   });
+
+  group('focusGap (click between blocks)', () {
+    test('inserts a focused empty paragraph between two blocks', () {
+      doc.loadText('# one\n\ntwo');
+      editor.focusGap(1);
+      expect(doc.doc.blocks, hasLength(3));
+      expect(doc.doc.blocks[1].kind, BlockKind.paragraph);
+      expect(doc.doc.blocks[1].source, isEmpty);
+      expect(editor.focusedBlockId, doc.doc.blocks[1].id);
+      // Untouched, it is invisible to dirty tracking and history.
+      expect(doc.dirty, isFalse);
+      expect(doc.canUndo, isFalse);
+    });
+
+    test('abandoning the gap block removes it without a trace', () {
+      doc.loadText('# one\n\ntwo');
+      final original = doc.serialize();
+      editor.focusGap(1);
+      editor.blur();
+      expect(doc.doc.blocks, hasLength(2));
+      expect(doc.serialize(), original);
+      expect(doc.dirty, isFalse);
+    });
+
+    test('typing materializes it and full undo restores the original', () {
+      doc.loadText('# one\n\ntwo');
+      final original = doc.serialize();
+      editor.focusGap(1);
+      type('mid', 3);
+      expect(doc.doc.blocks[1].source, 'mid');
+      expect(doc.dirty, isTrue);
+
+      editor.undo(); // typing
+      expect(doc.doc.blocks[1].source, isEmpty);
+      editor.undo(); // recorded insertion
+      expect(doc.doc.blocks, hasLength(2));
+      expect(doc.serialize(), original);
+      expect(doc.dirty, isFalse);
+    });
+
+    test('older undo entries stay valid after a gap insertion', () {
+      doc.loadText('one\n\ntwo');
+      // A real edit BEFORE the gap insertion.
+      editor.focusBlock(doc.doc.blocks[1].id, offset: 3);
+      type('two!', 4);
+      // Gap insertion above it + typing.
+      editor.focusGap(1);
+      type('mid', 3);
+      expect(
+          doc.doc.blocks.map((b) => b.source), ['one', 'mid', 'two!']);
+      editor.undo(); // 'mid' typing
+      editor.undo(); // gap insertion
+      editor.undo(); // 'two!' typing — indices must still line up
+      expect(doc.doc.blocks.map((b) => b.source), ['one', 'two']);
+      expect(doc.dirty, isFalse);
+    });
+
+    test('undo on an untouched gap block just removes it', () {
+      doc.loadText('one\n\ntwo');
+      editor.focusBlock(doc.doc.blocks[0].id, offset: 3);
+      type('one!', 4);
+      editor.focusGap(1);
+      editor.undo();
+      // The empty line is gone; the earlier edit survives.
+      expect(doc.doc.blocks.map((b) => b.source), ['one!', 'two']);
+      editor.undo();
+      expect(doc.doc.blocks.map((b) => b.source), ['one', 'two']);
+    });
+
+    test('reuses a neighbouring empty paragraph instead of stacking', () {
+      doc.loadText('one\n\ntwo');
+      editor.focusGap(1);
+      final id = editor.focusedBlockId;
+      editor.focusGap(1);
+      expect(doc.doc.blocks, hasLength(3));
+      expect(editor.focusedBlockId, id);
+    });
+  });
 }
