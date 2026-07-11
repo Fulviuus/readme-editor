@@ -8,7 +8,7 @@ import 'dart:ui' as ui;
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_selector/file_selector.dart'
-    show XFile, XTypeGroup, getSaveLocation, openFiles;
+    show XFile, XTypeGroup, getSaveLocation, openFile, openFiles;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
@@ -27,6 +27,7 @@ import '../editor/source_view.dart';
 import '../theme/readme_theme.dart';
 import '../theme/theme_manager.dart';
 import '../workspace/html_export.dart';
+import '../workspace/pandoc.dart';
 import '../workspace/pdf_export.dart';
 import '../workspace/workspace_controller.dart';
 import 'app_menu.dart';
@@ -253,6 +254,97 @@ class _HomeShellState extends State<HomeShell> {
       await _workspace.openPath(path);
       _surfaceWorkspaceError();
     }
+  }
+
+  /// File > Import…: any format pandoc reads, converted to markdown and
+  /// opened as a new untitled document.
+  Future<void> _importFile() async {
+    _editor.commitSourceMode?.call();
+    final pandoc = await findPandoc();
+    if (pandoc == null) {
+      _showPandocMissing();
+      return;
+    }
+    final file = await openFile(acceptedTypeGroups: const [
+      XTypeGroup(label: 'Importable documents', extensions: <String>[
+        'docx', 'odt', 'epub', 'html', 'htm', 'rtf', 'tex', 'rst', 'textile',
+      ]),
+    ]);
+    if (file == null || !await _confirmLoseChanges()) return;
+    _prepareForDocumentSwitch();
+    try {
+      final markdown = await pandocImport(pandoc, file.path);
+      await _workspace.newFile();
+      _doc.loadText(markdown);
+    } on PandocException catch (e) {
+      _showErrorDialog('Import failed', e.message);
+    }
+  }
+
+  /// File > Export > Word/OpenDocument/Epub/LaTeX/RTF via pandoc.
+  Future<void> _exportPandoc(String ext) async {
+    _editor.commitSourceMode?.call();
+    final pandoc = await findPandoc();
+    if (pandoc == null) {
+      _showPandocMissing();
+      return;
+    }
+    final location = await getSaveLocation(
+      acceptedTypeGroups: [
+        XTypeGroup(label: ext.toUpperCase(), extensions: <String>[ext]),
+      ],
+      suggestedName: '${p.basenameWithoutExtension(_fileName)}.$ext',
+    );
+    if (location == null) return;
+    var path = location.path;
+    if (!path.toLowerCase().endsWith('.$ext')) path = '$path.$ext';
+    try {
+      await pandocExport(pandoc, _doc.serialize(), path,
+          title: p.basenameWithoutExtension(_fileName));
+    } on PandocException catch (e) {
+      _showErrorDialog('Export failed', e.message);
+    }
+  }
+
+  void _showPandocMissing() {
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Pandoc required'),
+        content: const Text(
+            'Importing and exporting these formats uses Pandoc, which was '
+            'not found on this system. Install it and try again.'),
+        actions: [
+          TextButton(
+            onPressed: () =>
+                launchUrl(Uri.parse('https://pandoc.org/installing.html')),
+            child: const Text('Get Pandoc'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showErrorDialog(String title, String message) {
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(message.isEmpty ? 'Unknown error.' : message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _exportHtml() async {
@@ -612,6 +704,8 @@ class _HomeShellState extends State<HomeShell> {
         openRecent: _openPath,
         save: _saveDocument,
         saveAs: _saveDocumentAs,
+        importFile: _importFile,
+        exportPandoc: _exportPandoc,
         exportHtml: _exportHtml,
         exportPdf: _exportPdf,
         exportImage: _exportImage,

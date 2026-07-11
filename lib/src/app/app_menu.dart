@@ -26,6 +26,8 @@ class AppMenuCallbacks {
     required this.openRecent,
     required this.save,
     required this.saveAs,
+    required this.importFile,
+    required this.exportPandoc,
     required this.exportHtml,
     required this.exportPdf,
     required this.exportImage,
@@ -60,6 +62,10 @@ class AppMenuCallbacks {
   final void Function(String path) openRecent;
   final VoidCallback save;
   final VoidCallback saveAs;
+  final VoidCallback importFile;
+
+  /// Export through pandoc; the argument is the target file extension.
+  final void Function(String extension) exportPandoc;
   final VoidCallback exportHtml;
   final VoidCallback exportPdf;
   final VoidCallback exportImage;
@@ -238,6 +244,12 @@ List<PlatformMenu> buildPlatformMenus({
             ),
           ],
         ),
+        PlatformMenuItemGroup(
+          members: [
+            PlatformMenuItem(
+                label: 'Import…', onSelected: actions.importFile),
+          ],
+        ),
         if (actions.hasFilePath)
           PlatformMenuItemGroup(
             members: [
@@ -276,6 +288,23 @@ List<PlatformMenu> buildPlatformMenus({
                       label: 'HTML…', onSelected: actions.exportHtml),
                   PlatformMenuItem(
                       label: 'Image…', onSelected: actions.exportImage),
+                ]),
+                PlatformMenuItemGroup(members: [
+                  PlatformMenuItem(
+                      label: 'Word (.docx)…',
+                      onSelected: () => actions.exportPandoc('docx')),
+                  PlatformMenuItem(
+                      label: 'OpenDocument (.odt)…',
+                      onSelected: () => actions.exportPandoc('odt')),
+                  PlatformMenuItem(
+                      label: 'Epub (.epub)…',
+                      onSelected: () => actions.exportPandoc('epub')),
+                  PlatformMenuItem(
+                      label: 'LaTeX (.tex)…',
+                      onSelected: () => actions.exportPandoc('tex')),
+                  PlatformMenuItem(
+                      label: 'RTF (.rtf)…',
+                      onSelected: () => actions.exportPandoc('rtf')),
                 ]),
               ],
             ),
@@ -1078,6 +1107,10 @@ class AppMenuBar extends StatelessWidget {
               onPressed: actions.share,
               child: const Text('Share…'),
             ),
+            MenuItemButton(
+              onPressed: actions.importFile,
+              child: const Text('Import…'),
+            ),
             SubmenuButton(
               menuChildren: [
                 MenuItemButton(
@@ -1089,6 +1122,22 @@ class AppMenuBar extends StatelessWidget {
                 MenuItemButton(
                     onPressed: actions.exportImage,
                     child: const Text('Image…')),
+                const Divider(height: 8),
+                MenuItemButton(
+                    onPressed: () => actions.exportPandoc('docx'),
+                    child: const Text('Word (.docx)…')),
+                MenuItemButton(
+                    onPressed: () => actions.exportPandoc('odt'),
+                    child: const Text('OpenDocument (.odt)…')),
+                MenuItemButton(
+                    onPressed: () => actions.exportPandoc('epub'),
+                    child: const Text('Epub (.epub)…')),
+                MenuItemButton(
+                    onPressed: () => actions.exportPandoc('tex'),
+                    child: const Text('LaTeX (.tex)…')),
+                MenuItemButton(
+                    onPressed: () => actions.exportPandoc('rtf'),
+                    child: const Text('RTF (.rtf)…')),
               ],
               child: const Text('Export'),
             ),
