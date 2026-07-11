@@ -8,6 +8,7 @@ import 'package:flutter/widgets.dart';
 import '../document/block.dart';
 import '../document/block_splitter.dart';
 import 'inline_renderer.dart';
+import 'spell/spell_decoration.dart';
 
 class MarkdownEditingController extends TextEditingController {
   /// Swapped by the editor when the theme changes.
@@ -16,6 +17,14 @@ class MarkdownEditingController extends TextEditingController {
   /// Kind of the focused block; used as a fallback when the current text no
   /// longer scans as a single block (mid-edit states).
   BlockKind fallbackKind = BlockKind.paragraph;
+
+  /// Misspellings found in [spellCheckedText]; applied only while the live
+  /// text still matches, so stale ranges can never mis-underline.
+  List<TextRange> spellRanges = const [];
+  String spellCheckedText = '';
+
+  /// Repaints the field without changing its value (spell results arrived).
+  void refreshSpans() => notifyListeners();
 
   @override
   TextSpan buildTextSpan({
@@ -36,6 +45,11 @@ class MarkdownEditingController extends TextEditingController {
     // Composing-region underline (IME) is intentionally not rendered; the
     // span must still cover the full text exactly, which buildEditingSpan
     // guarantees.
-    return r.buildEditingSpan(text, kind, headingLevel: level);
+    var span = r.buildEditingSpan(text, kind, headingLevel: level);
+    if (spellRanges.isNotEmpty && spellCheckedText == text) {
+      span =
+          decorateMisspellings(span, spellRanges, const Color(0xFFE5484D));
+    }
+    return span;
   }
 }

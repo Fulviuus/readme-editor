@@ -13,11 +13,13 @@ class SettingsController extends ChangeNotifier {
   static const _kSmartDashes = 'smartDashes';
   static const _kPreserveLineBreak = 'preserveSingleLineBreak';
   static const _kVisibleBr = 'visibleBr';
+  static const _kSpellCheck = 'spellCheck';
 
   bool _smartQuotes = false;
   bool _smartDashes = false;
   bool _preserveSingleLineBreak = true;
   bool _visibleBr = false;
+  bool _spellCheck = true;
 
   /// Convert straight quotes to curly while typing.
   bool get smartQuotes => _smartQuotes;
@@ -32,6 +34,10 @@ class SettingsController extends ChangeNotifier {
   /// Show `<br>` tags as a dimmed `↵` glyph instead of hiding them.
   bool get visibleBr => _visibleBr;
 
+  /// Squiggle misspellings in the block being edited (system spell checker;
+  /// native platforms only).
+  bool get spellCheck => _spellCheck;
+
   Future<void> load() async {
     try {
       _smartQuotes = await _prefs.getBool(_kSmartQuotes) ?? false;
@@ -39,6 +45,7 @@ class SettingsController extends ChangeNotifier {
       _preserveSingleLineBreak =
           await _prefs.getBool(_kPreserveLineBreak) ?? true;
       _visibleBr = await _prefs.getBool(_kVisibleBr) ?? false;
+      _spellCheck = await _prefs.getBool(_kSpellCheck) ?? true;
       notifyListeners();
     } catch (_) {}
   }
@@ -59,4 +66,6 @@ class SettingsController extends ChangeNotifier {
       _set(_kPreserveLineBreak, v, () => _preserveSingleLineBreak = v);
   Future<void> setVisibleBr(bool v) =>
       _set(_kVisibleBr, v, () => _visibleBr = v);
+  Future<void> setSpellCheck(bool v) =>
+      _set(_kSpellCheck, v, () => _spellCheck = v);
 }

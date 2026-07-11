@@ -12,6 +12,7 @@ import '../document/block.dart';
 import 'block_padding.dart';
 import 'blocks/table_block.dart';
 import 'editor_controller.dart';
+import 'spell/spell_checker.dart';
 
 class EditingBlock extends StatefulWidget {
   const EditingBlock({super.key, required this.block, required this.editor});
@@ -186,8 +187,66 @@ class _EditingBlockState extends State<EditingBlock> {
             hintText: isOnlyEmptyBlock ? 'Type here…' : null,
             hintStyle: theme.bodyStyle.copyWith(color: theme.hintColor),
           ),
+          contextMenuBuilder: (context, state) =>
+              _SpellAwareContextMenu(state: state, editor: editor),
         ),
       ),
+    );
+  }
+}
+
+/// The field's context menu, with spelling suggestions prepended when the
+/// click landed on a misspelled word.
+class _SpellAwareContextMenu extends StatelessWidget {
+  const _SpellAwareContextMenu({required this.state, required this.editor});
+
+  final EditableTextState state;
+  final EditorController editor;
+
+  @override
+  Widget build(BuildContext context) {
+    final sel = state.textEditingValue.selection;
+    final range =
+        sel.isValid ? editor.misspellingAt(sel.baseOffset) : null;
+    final defaults = AdaptiveTextSelectionToolbar.editableText(
+        editableTextState: state);
+    if (range == null) return defaults;
+    final word = state.textEditingValue.text
+        .substring(range.start, range.end);
+    return FutureBuilder<List<String>>(
+      future: SpellChecker.suggest(word),
+      builder: (context, snap) {
+        if (!snap.hasData) return defaults;
+        final items = <ContextMenuButtonItem>[
+          for (final s in snap.data!.take(5))
+            ContextMenuButtonItem(
+              label: s,
+              onPressed: () {
+                state.hideToolbar();
+                editor.replaceRange(range.start, range.end, s);
+              },
+            ),
+          ContextMenuButtonItem(
+            label: 'Learn Spelling',
+            onPressed: () {
+              state.hideToolbar();
+              editor.learnWord(word);
+            },
+          ),
+          ContextMenuButtonItem(
+            label: 'Ignore Spelling',
+            onPressed: () {
+              state.hideToolbar();
+              editor.learnWord(word, permanently: false);
+            },
+          ),
+          ...state.contextMenuButtonItems,
+        ];
+        return AdaptiveTextSelectionToolbar.buttonItems(
+          anchors: state.contextMenuAnchors,
+          buttonItems: items,
+        );
+      },
     );
   }
 }

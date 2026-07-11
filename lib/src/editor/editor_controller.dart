@@ -4,6 +4,8 @@
 /// bridging (docs/DESIGN-editor-interaction.md §2, §5, §6).
 library;
 
+import 'dart:async' show Timer;
+
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter/widgets.dart';
 import 'package:markdown/markdown.dart' as md;
@@ -16,6 +18,7 @@ import 'blocks/table_model.dart';
 import 'inline_renderer.dart';
 import 'inline_tokenizer.dart';
 import 'markdown_editing_controller.dart';
+import 'spell/spell_checker.dart';
 
 final _listItemLineRe =
     RegExp(r'^(\s*)([-*+]|\d{1,9}[.)])([ \t]+)(\[[ xX]\][ \t]+)?');
@@ -281,6 +284,75 @@ class EditorController extends ChangeNotifier {
     editing.value = value;
     _applying = false;
     _lastValue = value;
+    _scheduleSpellCheck();
+  }
+
+  // ---- Spell check (system checker over the platform channel) ----
+
+  bool _spellCheckEnabled = true;
+  bool get spellCheckEnabled => _spellCheckEnabled;
+  set spellCheckEnabled(bool v) {
+    if (_spellCheckEnabled == v) return;
+    _spellCheckEnabled = v;
+    if (v) {
+      _scheduleSpellCheck();
+    } else {
+      _spellTimer?.cancel();
+      _spellSeq++;
+      if (editing.spellRanges.isNotEmpty) {
+        editing.spellRanges = const [];
+        editing.spellCheckedText = '';
+        editing.refreshSpans();
+      }
+    }
+  }
+
+  Timer? _spellTimer;
+  int _spellSeq = 0;
+
+  /// Debounced check of the focused block's live text; results land on the
+  /// editing controller, which squiggles them in [buildTextSpan]. Code-like
+  /// blocks are never checked.
+  void _scheduleSpellCheck() {
+    if (!_spellCheckEnabled || !SpellChecker.supported) return;
+    _spellTimer?.cancel();
+    final seq = ++_spellSeq;
+    _spellTimer = Timer(const Duration(milliseconds: 250), () async {
+      final block = focusedBlock;
+      final text = editing.text;
+      if (block == null || _codeLikeKinds.contains(block.kind)) {
+        if (editing.spellRanges.isNotEmpty) {
+          editing.spellRanges = const [];
+          editing.spellCheckedText = '';
+          editing.refreshSpans();
+        }
+        return;
+      }
+      final ranges = await SpellChecker.check(text);
+      if (seq != _spellSeq || editing.text != text) return;
+      editing.spellRanges = ranges;
+      editing.spellCheckedText = text;
+      editing.refreshSpans();
+    });
+  }
+
+  /// The misspelled range containing [offset], if spell data is current.
+  TextRange? misspellingAt(int offset) {
+    if (!_spellCheckEnabled || editing.spellCheckedText != editing.text) {
+      return null;
+    }
+    for (final r in editing.spellRanges) {
+      if (offset >= r.start && offset <= r.end) return r;
+    }
+    return null;
+  }
+
+  /// Teaches or ignores the word, then re-checks the current text.
+  Future<void> learnWord(String word, {bool permanently = true}) async {
+    await (permanently
+        ? SpellChecker.learn(word)
+        : SpellChecker.ignore(word));
+    _scheduleSpellCheck();
   }
 
   CaretSnapshot? _snap(TextSelection sel) => _focusedBlockId == null
@@ -304,6 +376,7 @@ class EditorController extends ChangeNotifier {
       return;
     }
     goalX = null;
+    _scheduleSpellCheck();
     if (id == _ephemeralBlockId) _ephemeralBlockId = null;
 
     final grew = v.text.length > old.text.length;
@@ -2355,6 +2428,7 @@ class EditorController extends ChangeNotifier {
   @override
   void dispose() {
     docCtrl.removeListener(_refreshDefinitions);
+    _spellTimer?.cancel();
     editing.removeListener(_onEditingChanged);
     focusNode.removeListener(_onFocusNodeChanged);
     editing.dispose();

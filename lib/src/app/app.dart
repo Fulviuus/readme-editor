@@ -49,6 +49,7 @@ class _ReadmeAppState extends State<ReadmeApp> {
     _editor
       ..smartQuotes = _settings.smartQuotes
       ..smartDashes = _settings.smartDashes
+      ..spellCheckEnabled = _settings.spellCheck
       ..applyRenderSettings(
         preserveSingleLineBreak: _settings.preserveSingleLineBreak,
         visibleBr: _settings.visibleBr,

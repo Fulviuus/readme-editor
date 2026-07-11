@@ -80,6 +80,12 @@ class _PreferencesDialog extends StatelessWidget {
               ),
               section('EDITOR'),
               toggle(
+                'Check spelling',
+                'Underline misspellings while editing a block',
+                settings.spellCheck,
+                (v) => settings.setSpellCheck(v),
+              ),
+              toggle(
                 'Smart quotes',
                 'Convert straight quotes to curly while typing',
                 settings.smartQuotes,
