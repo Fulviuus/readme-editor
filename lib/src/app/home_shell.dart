@@ -4,10 +4,14 @@
 /// flows, window-title sync and window-close interception.
 library;
 
+import 'dart:ui' as ui;
+
 import 'package:desktop_drop/desktop_drop.dart';
-import 'package:file_selector/file_selector.dart' show XTypeGroup, openFiles;
+import 'package:file_selector/file_selector.dart'
+    show XFile, XTypeGroup, getSaveLocation, openFiles;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
@@ -18,6 +22,7 @@ import '../document/document_controller.dart';
 import '../editor/editor_controller.dart';
 import '../editor/editor_view.dart';
 import '../editor/find_bar.dart';
+import '../editor/rendered_block.dart';
 import '../editor/source_view.dart';
 import '../theme/readme_theme.dart';
 import '../theme/theme_manager.dart';
@@ -268,6 +273,67 @@ class _HomeShellState extends State<HomeShell> {
       title: p.basenameWithoutExtension(_fileName),
       suggestedName: '${p.basenameWithoutExtension(_fileName)}.pdf',
     );
+  }
+
+  /// File > Export > Image…: renders every block offscreen at the theme's
+  /// column width and captures one tall PNG — exactly what the app shows.
+  Future<void> _exportImage() async {
+    _editor.commitSourceMode?.call();
+    final location = await getSaveLocation(
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'PNG image', extensions: <String>['png']),
+      ],
+      suggestedName: '${p.basenameWithoutExtension(_fileName)}.png',
+    );
+    if (location == null || !mounted) return;
+    var path = location.path;
+    if (!path.toLowerCase().endsWith('.png')) path = '$path.png';
+
+    final theme = _editor.theme;
+    final boundaryKey = GlobalKey();
+    final entry = OverlayEntry(
+      builder: (_) => Positioned(
+        left: -100000,
+        top: 0,
+        child: Material(
+          child: RepaintBoundary(
+            key: boundaryKey,
+            child: Container(
+              width: theme.contentMaxWidth + 96,
+              color: theme.background,
+              padding: const EdgeInsets.all(48),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final block in _doc.doc.blocks)
+                    RenderedBlock(block: block, editor: _editor),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    Overlay.of(context).insert(entry);
+    try {
+      // Two frames: one to lay out, one for images to (maybe) resolve.
+      await WidgetsBinding.instance.endOfFrame;
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      await WidgetsBinding.instance.endOfFrame;
+      final boundary = boundaryKey.currentContext?.findRenderObject()
+          as RenderRepaintBoundary?;
+      if (boundary == null) return;
+      final image = await boundary.toImage(pixelRatio: 2);
+      final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+      image.dispose();
+      if (bytes == null) return;
+      await XFile.fromData(bytes.buffer.asUint8List(),
+              mimeType: 'image/png')
+          .saveTo(path);
+    } finally {
+      entry.remove();
+    }
   }
 
   Future<void> _print() async {
@@ -548,6 +614,7 @@ class _HomeShellState extends State<HomeShell> {
         saveAs: _saveDocumentAs,
         exportHtml: _exportHtml,
         exportPdf: _exportPdf,
+        exportImage: _exportImage,
         print: _print,
         share: _share,
         toggleSidebar: _toggleSidebar,

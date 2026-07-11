@@ -28,6 +28,7 @@ class AppMenuCallbacks {
     required this.saveAs,
     required this.exportHtml,
     required this.exportPdf,
+    required this.exportImage,
     required this.print,
     required this.share,
     required this.toggleSidebar,
@@ -61,6 +62,7 @@ class AppMenuCallbacks {
   final VoidCallback saveAs;
   final VoidCallback exportHtml;
   final VoidCallback exportPdf;
+  final VoidCallback exportImage;
   final VoidCallback print;
   final VoidCallback share;
   final VoidCallback toggleSidebar;
@@ -272,6 +274,8 @@ List<PlatformMenu> buildPlatformMenus({
                       label: 'PDF…', onSelected: actions.exportPdf),
                   PlatformMenuItem(
                       label: 'HTML…', onSelected: actions.exportHtml),
+                  PlatformMenuItem(
+                      label: 'Image…', onSelected: actions.exportImage),
                 ]),
               ],
             ),
@@ -1082,6 +1086,9 @@ class AppMenuBar extends StatelessWidget {
                 MenuItemButton(
                     onPressed: actions.exportHtml,
                     child: const Text('HTML…')),
+                MenuItemButton(
+                    onPressed: actions.exportImage,
+                    child: const Text('Image…')),
               ],
               child: const Text('Export'),
             ),
