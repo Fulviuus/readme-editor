@@ -367,6 +367,11 @@ class _PdfRenderer {
           out.add(pw.TextSpan(
               text: (n.url),
               style: style.copyWith(color: _color(theme.link))));
+        case RefLinkNode():
+          _walk(n.children, s, style.copyWith(color: _color(theme.link)), out);
+        case FootnoteRefNode():
+          out.add(pw.TextSpan(
+              text: n.id, style: style.copyWith(color: _color(theme.link))));
         case HtmlTagNode():
           break; // tags dropped (underline pairs included — no glyphs)
         case CommentNode():

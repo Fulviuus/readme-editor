@@ -84,6 +84,28 @@ class CommentNode extends InlineNode {
   CommentNode(super.start, super.end);
 }
 
+/// `[label][ref]`, `[label][]`, or shortcut `[ref]` — a reference-style link
+/// whose URL is resolved from document-level `[ref]: url` definitions.
+class RefLinkNode extends InlineNode {
+  RefLinkNode(super.start, super.end, this.labelStart, this.labelEnd,
+      this.reference, this.children);
+  final int labelStart, labelEnd;
+
+  /// Normalized reference key (collapsed whitespace, lower-cased).
+  final String reference;
+  final List<InlineNode> children;
+}
+
+/// `[^id]` — a footnote reference, rendered as a superscript marker.
+class FootnoteRefNode extends InlineNode {
+  FootnoteRefNode(super.start, super.end, this.id);
+  final String id;
+}
+
+/// Normalizes a link-reference label the way CommonMark does.
+String normalizeReference(String label) =>
+    label.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+
 final _punct = RegExp(r'''[!-/:-@\[-`{-~]''');
 
 /// Cap on how far a single delimiter (link bracket, emphasis run) scans for
@@ -124,6 +146,10 @@ String plainTextOfInline(String s) {
         case HtmlTagNode():
           break;
         case CommentNode():
+          break;
+        case RefLinkNode():
+          walk(n.children);
+        case FootnoteRefNode():
           break;
       }
     }
@@ -190,7 +216,23 @@ List<InlineNode> _parse(String s, int from, int to) {
       }
     }
 
-    // Link.
+    // Footnote reference `[^id]`.
+    if (c == '[' && i + 1 < to && s[i + 1] == '^') {
+      final close = s.indexOf(']', i + 2);
+      if (close >= 0 && close < to && close > i + 2) {
+        final id = s.substring(i + 2, close);
+        if (!id.contains('[') && !id.contains(' ')) {
+          flushText(i);
+          nodes.add(FootnoteRefNode(i, close + 1, id));
+          i = close + 1;
+          textStart = i;
+          continue;
+        }
+      }
+    }
+
+    // Inline link `[label](url)`, then reference link `[label][ref]` /
+    // shortcut `[ref]`.
     if (c == '[') {
       final link = _tryParseLink(s, i, to);
       if (link != null) {
@@ -199,6 +241,15 @@ List<InlineNode> _parse(String s, int from, int to) {
             link.urlStart, link.urlEnd, link.url,
             _parse(s, link.labelStart, link.labelEnd)));
         i = link.end;
+        textStart = i;
+        continue;
+      }
+      final ref = _tryParseRefLink(s, i, to);
+      if (ref != null) {
+        flushText(i);
+        nodes.add(RefLinkNode(i, ref.end, ref.labelStart, ref.labelEnd,
+            ref.reference, _parse(s, ref.labelStart, ref.labelEnd)));
+        i = ref.end;
         textStart = i;
         continue;
       }
@@ -357,11 +408,10 @@ class _ParsedLink {
 }
 
 /// Parses `[label](url "title")` starting at `[`; returns null if malformed.
-_ParsedLink? _tryParseLink(String s, int at, int to) {
-  if (to - at > _scanWindow) to = at + _scanWindow;
+/// Finds the matching `]` for the `[` at [at]; returns its index or -1.
+int _matchCloseBracket(String s, int at, int to) {
   var depth = 0;
   var j = at;
-  var closeBracket = -1;
   while (j < to) {
     final c = s[j];
     if (c == r'\') {
@@ -371,13 +421,49 @@ _ParsedLink? _tryParseLink(String s, int at, int to) {
     if (c == '[') depth++;
     if (c == ']') {
       depth--;
-      if (depth == 0) {
-        closeBracket = j;
-        break;
-      }
+      if (depth == 0) return j;
     }
     j++;
   }
+  return -1;
+}
+
+class _ParsedRefLink {
+  _ParsedRefLink(this.end, this.labelStart, this.labelEnd, this.reference);
+  final int end;
+  final int labelStart, labelEnd;
+  final String reference;
+}
+
+/// Parses `[label][ref]`, `[label][]`, or shortcut `[ref]` at `[`. The
+/// reference is normalized but NOT resolved — resolution happens at render
+/// time against the document's definitions.
+_ParsedRefLink? _tryParseRefLink(String s, int at, int to) {
+  if (to - at > _scanWindow) to = at + _scanWindow;
+  final close = _matchCloseBracket(s, at, to);
+  if (close < 0) return null;
+  final label = s.substring(at + 1, close);
+  // Full reference: `[label][ref]`.
+  if (close + 1 < to && s[close + 1] == '[') {
+    final close2 = _matchCloseBracket(s, close + 1, to);
+    if (close2 > close) {
+      final refText = s.substring(close + 2, close2);
+      final ref = refText.trim().isEmpty ? label : refText;
+      return _ParsedRefLink(
+          close2 + 1, at + 1, close, normalizeReference(ref));
+    }
+  }
+  // Shortcut reference: `[ref]` not followed by `[` or `(`.
+  final next = close + 1 < to ? s[close + 1] : '';
+  if (next != '[' && next != '(' && label.trim().isNotEmpty) {
+    return _ParsedRefLink(close + 1, at + 1, close, normalizeReference(label));
+  }
+  return null;
+}
+
+_ParsedLink? _tryParseLink(String s, int at, int to) {
+  if (to - at > _scanWindow) to = at + _scanWindow;
+  final closeBracket = _matchCloseBracket(s, at, to);
   if (closeBracket < 0 || closeBracket + 1 >= to || s[closeBracket + 1] != '(') {
     return null;
   }

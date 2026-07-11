@@ -87,6 +87,47 @@ class Document {
     return i < 0 ? null : blocks[i];
   }
 
+  static final _linkDefRe =
+      RegExp(r'^ {0,3}\[([^\]^]+)\]:\s*(\S+)', multiLine: true);
+  static final _footnoteDefRe =
+      RegExp(r'^ {0,3}\[\^([^\]\s]+)\]:\s*(.*)$', multiLine: true);
+
+  /// `[ref]: url` definitions across the document, keyed by normalized ref.
+  Map<String, String> get linkDefinitions {
+    final defs = <String, String>{};
+    for (final b in blocks) {
+      for (final m in _linkDefRe.allMatches(b.source)) {
+        final key = m.group(1)!.trim().replaceAll(RegExp(r'\s+'), ' ')
+            .toLowerCase();
+        defs.putIfAbsent(key, () => m.group(2)!);
+      }
+    }
+    return defs;
+  }
+
+  /// Footnote ids in first-reference order → their 1-based number, plus the
+  /// definition text keyed by id.
+  ({Map<String, int> numbers, Map<String, String> texts}) get footnotes {
+    final texts = <String, String>{};
+    for (final b in blocks) {
+      for (final m in _footnoteDefRe.allMatches(b.source)) {
+        texts.putIfAbsent(m.group(1)!, () => m.group(2)!.trim());
+      }
+    }
+    // Number footnotes by first reference appearance across the document.
+    final numbers = <String, int>{};
+    final refRe = RegExp(r'\[\^([^\]\s]+)\]');
+    for (final b in blocks) {
+      for (final line in b.source.split('\n')) {
+        if (_footnoteDefRe.hasMatch(line)) continue; // skip definitions
+        for (final m in refRe.allMatches(line)) {
+          numbers.putIfAbsent(m.group(1)!, () => numbers.length + 1);
+        }
+      }
+    }
+    return (numbers: numbers, texts: texts);
+  }
+
   /// Heading outline for the sidebar: (level, text, blockId).
   List<OutlineEntry> get outline => [
         for (final b in blocks)

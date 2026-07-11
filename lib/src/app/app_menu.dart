@@ -767,6 +767,14 @@ List<PlatformMenu> buildPlatformMenus({
         PlatformMenuItemGroup(
           members: [
             PlatformMenuItem(
+              label: 'Link Reference',
+              onSelected: editor.insertLinkReference,
+            ),
+            PlatformMenuItem(
+              label: 'Footnote',
+              onSelected: editor.insertFootnote,
+            ),
+            PlatformMenuItem(
               label: 'Table of Contents',
               onSelected: editor.insertTableOfContents,
             ),
@@ -1424,6 +1432,14 @@ class AppMenuBar extends StatelessWidget {
               child: const Text('Insert Paragraph After'),
             ),
             const Divider(height: 8),
+            MenuItemButton(
+              onPressed: editor.insertLinkReference,
+              child: const Text('Link Reference'),
+            ),
+            MenuItemButton(
+              onPressed: editor.insertFootnote,
+              child: const Text('Footnote'),
+            ),
             MenuItemButton(
               onPressed: editor.insertTableOfContents,
               child: const Text('Table of Contents'),

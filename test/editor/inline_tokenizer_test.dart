@@ -128,6 +128,35 @@ void main() {
       expect(
           tokenizeInline('a <!-- no end').whereType<CommentNode>(), isEmpty);
     });
+
+    test('reference link (full and shortcut)', () {
+      final full = tokenizeInline('see [text][ref] here')
+          .whereType<RefLinkNode>()
+          .single;
+      expect(full.reference, 'ref');
+      expect((full.labelStart, full.labelEnd), (5, 9));
+
+      final shortcut =
+          tokenizeInline('see [ref] here').whereType<RefLinkNode>().single;
+      expect(shortcut.reference, 'ref');
+
+      final collapsed =
+          tokenizeInline('[text][] x').whereType<RefLinkNode>().single;
+      expect(collapsed.reference, 'text');
+    });
+
+    test('inline link is not treated as a reference link', () {
+      final nodes = tokenizeInline('[a](http://x)');
+      expect(nodes.whereType<RefLinkNode>(), isEmpty);
+      expect(nodes.whereType<LinkNode>(), hasLength(1));
+    });
+
+    test('footnote reference', () {
+      final fn =
+          tokenizeInline('text[^1] more').whereType<FootnoteRefNode>().single;
+      expect(fn.id, '1');
+      expect((fn.start, fn.end), (4, 8));
+    });
   });
 
   group('plainTextOfInline', () {

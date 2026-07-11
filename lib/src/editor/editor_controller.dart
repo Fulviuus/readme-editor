@@ -33,6 +33,15 @@ class EditorController extends ChangeNotifier {
     editing.renderer = _renderer;
     editing.addListener(_onEditingChanged);
     focusNode.addListener(_onFocusNodeChanged);
+    docCtrl.addListener(_refreshDefinitions);
+    _refreshDefinitions();
+  }
+
+  /// Keeps the renderer's reference-link and footnote maps in sync with the
+  /// document so `[text][ref]` links and `[^id]` footnotes resolve.
+  void _refreshDefinitions() {
+    _renderer.linkDefinitions = docCtrl.doc.linkDefinitions;
+    _renderer.footnoteNumbers = docCtrl.doc.footnotes.numbers;
   }
 
   final DocumentController docCtrl;
@@ -48,12 +57,14 @@ class EditorController extends ChangeNotifier {
     _theme = t;
     _renderer = InlineRenderer(t, imageBuilder: _renderer.imageBuilder);
     editing.renderer = _renderer;
+    _refreshDefinitions();
     notifyListeners();
   }
 
   set imageBuilder(ImageBuilder? b) {
     _renderer = InlineRenderer(_theme, imageBuilder: b);
     editing.renderer = _renderer;
+    _refreshDefinitions();
   }
 
   String? _focusedBlockId;
@@ -1636,6 +1647,55 @@ class EditorController extends ChangeNotifier {
     ], focusOffset: 1);
   }
 
+  /// Inserts a reference-style link `[label][ref]` at the caret and a
+  /// `[ref]: url` definition block at the end of the document.
+  void insertLinkReference() {
+    final sel = editing.selection;
+    final block = focusedBlock;
+    final label = (block != null && sel.isValid && !sel.isCollapsed)
+        ? editing.text.substring(sel.start, sel.end)
+        : 'link';
+    // Pick a fresh ref id.
+    final existing = docCtrl.doc.linkDefinitions.keys.toSet();
+    var n = 1;
+    while (existing.contains('ref$n')) {
+      n++;
+    }
+    final ref = 'ref$n';
+    if (block != null && sel.isValid && !sel.isCollapsed) {
+      replaceRange(sel.start, sel.end, '[$label][$ref]',
+          kind: EditKind.paste);
+    } else {
+      replaceRange(sel.start, sel.start, '[$label][$ref]',
+          kind: EditKind.paste);
+    }
+    final def = Block(
+        kind: BlockKind.paragraph, source: '[$ref]: https://');
+    docCtrl.spliceBlocks(
+      index: docCtrl.doc.blocks.length, before: [], after: [def],
+      kind: EditKind.blockOp,
+    );
+  }
+
+  /// Inserts a footnote reference `[^n]` at the caret and a `[^n]: ` block at
+  /// the end of the document, focusing the definition.
+  void insertFootnote() {
+    final existing = docCtrl.doc.footnotes.numbers.keys
+        .map((k) => int.tryParse(k) ?? 0)
+        .fold<int>(0, (m, v) => v > m ? v : m);
+    final id = '${existing + 1}';
+    final sel = editing.selection;
+    if (focusedBlock != null && sel.isValid) {
+      replaceRange(sel.start, sel.end, '[^$id]', kind: EditKind.paste);
+    }
+    final def = Block(kind: BlockKind.paragraph, source: '[^$id]: ');
+    docCtrl.spliceBlocks(
+      index: docCtrl.doc.blocks.length, before: [], after: [def],
+      kind: EditKind.blockOp,
+    );
+    focusBlock(def.id, offset: def.source.length);
+  }
+
   /// Inserts a `[TOC]` block (rendered as a live outline) after the focused
   /// block.
   void insertTableOfContents() {
@@ -2191,6 +2251,7 @@ class EditorController extends ChangeNotifier {
 
   @override
   void dispose() {
+    docCtrl.removeListener(_refreshDefinitions);
     editing.removeListener(_onEditingChanged);
     focusNode.removeListener(_onFocusNodeChanged);
     editing.dispose();

@@ -50,6 +50,13 @@ class InlineRenderer {
   final ReadmeTheme theme;
   final ImageBuilder? imageBuilder;
 
+  /// Document-level `[ref]: url` definitions, updated by the editor when the
+  /// document changes. Used to resolve reference-style links.
+  Map<String, String> linkDefinitions = const {};
+
+  /// Footnote id → 1-based number, for superscript markers.
+  Map<String, int> footnoteNumbers = const {};
+
   // ---- Rendered mode ----
 
   /// Renders [source] (or a slice of it) with markers hidden. Run offsets in
@@ -129,6 +136,34 @@ class InlineRenderer {
             links.add(LinkRange(linkStart, rb.renderedLength, node.url));
           }
           rb.hidden(node.labelEnd, node.end);
+        case RefLinkNode():
+          final url = linkDefinitions[node.reference];
+          if (url == null) {
+            // Unresolved: show the literal source.
+            emitText(node.start, node.end, active());
+          } else {
+            rb.hidden(node.start, node.labelStart);
+            final st = active().merge(theme.linkStyle);
+            final linkStart = rb.renderedLength;
+            spans.addAll(_renderNodes(s, node.children, st, rb, out, links));
+            if (rb.renderedLength > linkStart) {
+              links.add(LinkRange(linkStart, rb.renderedLength, url));
+            }
+            rb.hidden(node.labelEnd, node.end);
+          }
+        case FootnoteRefNode():
+          final n = footnoteNumbers[node.id];
+          final label = n?.toString() ?? node.id;
+          spans.add(TextSpan(
+            text: label,
+            style: active().copyWith(
+              color: theme.link,
+              fontFeatures: const [FontFeature.superscripts()],
+              fontSize: (active().fontSize ?? theme.fontSize) * 0.85,
+            ),
+          ));
+          rb.atomic(node.start, node.end, label.length);
+          out.write(label);
         case ImageNode():
           final w = imageBuilder?.call(node.url, node.alt);
           if (w != null) {
@@ -285,6 +320,13 @@ class InlineRenderer {
           put(node.start, node.end, style.merge(marker));
         case CommentNode():
           put(node.start, node.end, style.merge(marker));
+        case RefLinkNode():
+          put(node.start, node.labelStart, style.merge(marker));
+          spans.addAll(_editingNodes(
+              s, node.labelStart, node.labelEnd, style.merge(theme.linkStyle)));
+          put(node.labelEnd, node.end, style.merge(marker));
+        case FootnoteRefNode():
+          put(node.start, node.end, style.merge(theme.linkStyle));
       }
     }
     return spans;
@@ -314,6 +356,10 @@ class InlineRenderer {
           AutolinkNode(n.start + d, n.end + d, n.url, bracketed: n.bracketed),
         HtmlTagNode() => HtmlTagNode(n.start + d, n.end + d),
         CommentNode() => CommentNode(n.start + d, n.end + d),
+        RefLinkNode() => RefLinkNode(n.start + d, n.end + d, n.labelStart + d,
+            n.labelEnd + d, n.reference,
+            n.children.map((c) => _shift(c, d)).toList(growable: false)),
+        FootnoteRefNode() => FootnoteRefNode(n.start + d, n.end + d, n.id),
       };
 
   TextSpan _buildHeadingSpan(String source, int level, TextStyle marker) {
