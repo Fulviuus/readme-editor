@@ -49,6 +49,7 @@ class AppMenuCallbacks {
     required this.toggleAutosave,
     required this.openMarkdownReference,
     required this.openQuickStart,
+    required this.preferences,
   });
 
   final VoidCallback about;
@@ -81,6 +82,7 @@ class AppMenuCallbacks {
   final VoidCallback toggleAutosave;
   final VoidCallback openMarkdownReference;
   final VoidCallback openQuickStart;
+  final VoidCallback preferences;
 }
 
 /// Routes a text-editing intent to the currently focused editable field.
@@ -107,6 +109,12 @@ List<PlatformMenu> buildPlatformMenus({
         PlatformMenuItemGroup(
           members: [
             PlatformMenuItem(label: 'About readme', onSelected: actions.about),
+            PlatformMenuItem(
+              label: 'Settings…',
+              shortcut:
+                  const SingleActivator(LogicalKeyboardKey.comma, meta: true),
+              onSelected: actions.preferences,
+            ),
           ],
         ),
         if (PlatformProvidedMenuItem.hasMenu(
@@ -1081,6 +1089,12 @@ class AppMenuBar extends StatelessWidget {
               onPressed: actions.print,
               shortcut: cmd(LogicalKeyboardKey.keyP),
               child: const Text('Print…'),
+            ),
+            const Divider(height: 8),
+            MenuItemButton(
+              onPressed: actions.preferences,
+              shortcut: cmd(LogicalKeyboardKey.comma),
+              child: const Text('Settings…'),
             ),
           ],
           child: const MenuAcceleratorLabel('&File'),

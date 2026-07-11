@@ -53,11 +53,33 @@ class EditorController extends ChangeNotifier {
   ReadmeTheme get theme => _theme;
   InlineRenderer get renderer => _renderer;
 
+  bool _preserveLineBreak = true;
+  bool _visibleBr = false;
+
+  /// Applies rendering preferences (Preferences window) to the renderer;
+  /// survives renderer recreation on theme/image changes.
+  void applyRenderSettings({
+    required bool preserveSingleLineBreak,
+    required bool visibleBr,
+  }) {
+    _preserveLineBreak = preserveSingleLineBreak;
+    _visibleBr = visibleBr;
+    _syncRendererFlags();
+    notifyListeners();
+  }
+
+  void _syncRendererFlags() {
+    _renderer
+      ..preserveSingleLineBreak = _preserveLineBreak
+      ..visibleBr = _visibleBr;
+  }
+
   set theme(ReadmeTheme t) {
     _theme = t;
     _renderer = InlineRenderer(t, imageBuilder: _renderer.imageBuilder);
     editing.renderer = _renderer;
     _refreshDefinitions();
+    _syncRendererFlags();
     notifyListeners();
   }
 
@@ -65,6 +87,7 @@ class EditorController extends ChangeNotifier {
     _renderer = InlineRenderer(_theme, imageBuilder: b);
     editing.renderer = _renderer;
     _refreshDefinitions();
+    _syncRendererFlags();
   }
 
   String? _focusedBlockId;
@@ -87,6 +110,11 @@ class EditorController extends ChangeNotifier {
   /// into the document. The shell calls this before saves, exports and
   /// dirty checks so uncommitted source-mode edits are never lost.
   VoidCallback? commitSourceMode;
+
+  /// Input substitutions (Edit > Substitutions / Preferences). Set by the
+  /// shell from SettingsController.
+  bool smartQuotes = false;
+  bool smartDashes = false;
 
   /// Installed by the app shell: resolves and opens a link URL (http(s) in
   /// the browser, relative .md paths in the editor). The editor layer stays
@@ -295,6 +323,29 @@ class EditorController extends ChangeNotifier {
     if (grew && v.selection.isCollapsed && v.selection.baseOffset > 0) {
       committed = v.text[v.selection.baseOffset - 1];
     }
+    // Input substitutions (single-character insertions only, never in
+    // code-like blocks).
+    if ((smartQuotes || smartDashes) &&
+        committed != null &&
+        v.text.length == old.text.length + 1) {
+      final substituted = _applySubstitution(v, committed);
+      if (substituted != null) {
+        final b = docCtrl.doc.blockById(id);
+        if (b != null) _setEditingValue(b, substituted);
+        _lastValue = substituted;
+        docCtrl.changeBlockSource(
+          id,
+          substituted.text,
+          kind: EditKind.typing,
+          caretBefore: CaretSnapshot(id, old.selection.baseOffset,
+              old.selection.extentOffset),
+          caretAfter: _snap(substituted.selection),
+        );
+        final updated = docCtrl.doc.blockById(id);
+        if (updated != null) editing.fallbackKind = updated.kind;
+        return;
+      }
+    }
     docCtrl.changeBlockSource(
       id,
       v.text,
@@ -306,6 +357,58 @@ class EditorController extends ChangeNotifier {
     );
     final b = docCtrl.doc.blockById(id);
     if (b != null) editing.fallbackKind = b.kind;
+  }
+
+  static const _codeLikeKinds = {
+    BlockKind.fencedCode,
+    BlockKind.indentedCode,
+    BlockKind.mathBlock,
+    BlockKind.html,
+    BlockKind.frontMatter,
+  };
+
+  /// Smart-quote/dash conversion of the just-typed character. Returns the
+  /// new editing value, or null when no substitution applies.
+  TextEditingValue? _applySubstitution(TextEditingValue v, String typed) {
+    final block = focusedBlock;
+    if (block == null || _codeLikeKinds.contains(block.kind)) return null;
+    final at = v.selection.baseOffset - 1; // index of the typed char
+    final text = v.text;
+    // Never substitute inside inline code (a backtick span around the caret).
+    bool inInlineCode() {
+      for (final n in tokenizeInline(text)) {
+        if (n is CodeNode && at >= n.start && at < n.end) return true;
+      }
+      return false;
+    }
+
+    String? replaceWith;
+    var replaceStart = at;
+    if (smartQuotes && (typed == '"' || typed == "'")) {
+      final prev = at > 0 ? text[at - 1] : '';
+      final opening =
+          prev.isEmpty || RegExp(r'''[\s(\[{'"—–-]''').hasMatch(prev);
+      replaceWith = typed == '"'
+          ? (opening ? '“' : '”')
+          : (opening ? '‘' : '’');
+    } else if (smartDashes && typed == '-') {
+      final lineStart = text.lastIndexOf('\n', at - 1 < 0 ? 0 : at - 1) + 1;
+      // `--` mid-text becomes an em dash; leave line-start dashes alone
+      // (lists, HRs, front matter fences).
+      if (at - 1 > lineStart && text[at - 1] == '-' &&
+          (at - 2 < lineStart || text[at - 2] != '-')) {
+        replaceWith = '—';
+        replaceStart = at - 1;
+      }
+    }
+    if (replaceWith == null || inInlineCode()) return null;
+    final newText =
+        text.replaceRange(replaceStart, at + 1, replaceWith);
+    return TextEditingValue(
+      text: newText,
+      selection:
+          TextSelection.collapsed(offset: replaceStart + replaceWith.length),
+    );
   }
 
   void _rescanAndRefocus(String id, TextEditingValue v, TextEditingValue old) {

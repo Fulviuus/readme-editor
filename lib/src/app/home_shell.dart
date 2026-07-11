@@ -27,6 +27,7 @@ import '../workspace/workspace_controller.dart';
 import 'app_menu.dart';
 import 'open_quickly.dart';
 import 'platform/window_support.dart';
+import 'preferences_dialog.dart';
 import 'sidebar/articles_pane.dart';
 import 'sidebar/file_tree.dart';
 import 'sidebar/outline_pane.dart';
@@ -570,6 +571,7 @@ class _HomeShellState extends State<HomeShell> {
         openMarkdownReference: () =>
             _openBundledDoc('assets/markdown-reference.md'),
         openQuickStart: () => _openBundledDoc('assets/welcome.md'),
+        preferences: () => showPreferences(context),
       );
 
   /// Shell-level shortcuts for platforms without a native menu bar. The

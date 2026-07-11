@@ -14,6 +14,7 @@ import '../theme/theme_manager.dart';
 import '../workspace/workspace_controller.dart';
 import 'home_shell.dart';
 import 'platform/local_image.dart';
+import 'settings_controller.dart';
 
 class ReadmeApp extends StatefulWidget {
   const ReadmeApp({super.key, required this.themeManager});
@@ -28,6 +29,7 @@ class _ReadmeAppState extends State<ReadmeApp> {
   late final DocumentController _docCtrl;
   late final EditorController _editor;
   late final WorkspaceController _workspace;
+  late final SettingsController _settings;
 
   @override
   void initState() {
@@ -36,8 +38,21 @@ class _ReadmeAppState extends State<ReadmeApp> {
     _editor = EditorController(_docCtrl, widget.themeManager.current)
       ..imageBuilder = _buildImage;
     _workspace = WorkspaceController(_docCtrl)..restoreSettings();
+    _settings = SettingsController();
+    _settings.addListener(_onSettingsChanged);
+    _settings.load();
     widget.themeManager.addListener(_onThemeChanged);
     _loadWelcome();
+  }
+
+  void _onSettingsChanged() {
+    _editor
+      ..smartQuotes = _settings.smartQuotes
+      ..smartDashes = _settings.smartDashes
+      ..applyRenderSettings(
+        preserveSingleLineBreak: _settings.preserveSingleLineBreak,
+        visibleBr: _settings.visibleBr,
+      );
   }
 
   /// First-launch content: the welcome tour, until a real file is opened.
@@ -56,6 +71,8 @@ class _ReadmeAppState extends State<ReadmeApp> {
 
   @override
   void dispose() {
+    _settings.removeListener(_onSettingsChanged);
+    _settings.dispose();
     widget.themeManager.removeListener(_onThemeChanged);
     _workspace.dispose();
     _editor.dispose();
@@ -132,6 +149,7 @@ class _ReadmeAppState extends State<ReadmeApp> {
         ChangeNotifierProvider<DocumentController>.value(value: _docCtrl),
         ChangeNotifierProvider<EditorController>.value(value: _editor),
         ChangeNotifierProvider<WorkspaceController>.value(value: _workspace),
+        ChangeNotifierProvider<SettingsController>.value(value: _settings),
       ],
       child: MaterialApp(
         title: 'readme',

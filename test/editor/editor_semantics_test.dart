@@ -690,6 +690,54 @@ void main() {
     });
   });
 
+  group('input substitutions', () {
+    test('smart quotes pick opening/closing by context', () {
+      doc.loadText('');
+      editor.smartQuotes = true;
+      editor.focusBlock(doc.doc.blocks.first.id);
+      type('"', 1);
+      expect(doc.doc.blocks.single.source, '“');
+      type('“h', 2);
+      type('“hi', 3);
+      type('“hi"', 4); // single-char insertion after alphanumeric → closing
+      expect(doc.doc.blocks.single.source, '“hi”');
+    });
+
+    test('smart dashes convert -- mid-text, never at line start', () {
+      doc.loadText('a -');
+      editor.smartDashes = true;
+      editor.focusBlock(doc.doc.blocks.first.id, offset: 3);
+      type('a --', 4);
+      expect(doc.doc.blocks.single.source, 'a —');
+
+      // Line start: '-' then '-' must stay literal (lists/HR).
+      doc.loadText('-');
+      editor.focusBlock(doc.doc.blocks.first.id, offset: 1);
+      type('--', 2);
+      expect(doc.doc.blocks.single.source, '--');
+    });
+
+    test('no substitution inside code blocks or inline code', () {
+      doc.loadText('```\nx\n```');
+      editor.smartQuotes = true;
+      editor.focusBlock(doc.doc.blocks.first.id, offset: 5);
+      type('```\nx"\n```', 6);
+      expect(doc.doc.blocks.single.source, contains('x"'));
+
+      doc.loadText('`code`');
+      editor.focusBlock(doc.doc.blocks.first.id, offset: 5);
+      type('`code"`', 6);
+      expect(doc.doc.blocks.single.source, '`code"`');
+    });
+
+    test('disabled by default', () {
+      doc.loadText('');
+      editor.focusBlock(doc.doc.blocks.first.id);
+      type('"', 1);
+      expect(doc.doc.blocks.single.source, '"');
+    });
+  });
+
   group('table of contents', () {
     test('insertTableOfContents adds a [TOC] block', () {
       doc.loadText('# Title');

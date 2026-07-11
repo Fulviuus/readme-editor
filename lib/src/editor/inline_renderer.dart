@@ -57,6 +57,13 @@ class InlineRenderer {
   /// Footnote id → 1-based number, for superscript markers.
   Map<String, int> footnoteNumbers = const {};
 
+  /// Render a lone `\n` in a paragraph as a break (true) or a space.
+  /// Length-preserving either way, so offset runs stay valid.
+  bool preserveSingleLineBreak = true;
+
+  /// Show `<br>` tags as a dimmed `↵` instead of hiding them.
+  bool visibleBr = false;
+
   // ---- Rendered mode ----
 
   /// Renders [source] (or a slice of it) with markers hidden. Run offsets in
@@ -98,7 +105,9 @@ class InlineRenderer {
 
     void emitText(int start, int end, TextStyle st) {
       if (end <= start) return;
-      final t = s.substring(start, end);
+      var t = s.substring(start, end);
+      // Length-preserving swap keeps the offset runs valid.
+      if (!preserveSingleLineBreak) t = t.replaceAll('\n', ' ');
       spans.add(TextSpan(text: t, style: st));
       rb.text(start, end);
       out.write(t);
@@ -189,6 +198,15 @@ class InlineRenderer {
           } else if (_uCloseRe.hasMatch(tag)) {
             if (underline > 0) underline--;
             rb.hidden(node.start, node.end);
+          } else if (RegExp(r'^<br\s*/?>$', caseSensitive: false)
+              .hasMatch(tag)) {
+            // <br> is a real line break; the pref shows it as a ↵ glyph.
+            final glyph = visibleBr ? '↵\n' : '\n';
+            spans.add(TextSpan(
+                text: glyph,
+                style: style.copyWith(color: theme.syntaxMarkerColor)));
+            rb.atomic(node.start, node.end, glyph.length);
+            out.write(glyph);
           } else {
             emitText(node.start, node.end,
                 style.copyWith(color: theme.syntaxMarkerColor));
