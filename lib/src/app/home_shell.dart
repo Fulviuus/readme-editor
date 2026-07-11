@@ -34,6 +34,7 @@ import '../workspace/pandoc.dart';
 import '../workspace/pdf_export.dart';
 import '../workspace/workspace_controller.dart';
 import 'app_menu.dart';
+import 'doc_tabs.dart';
 import 'platform/clipboard_image.dart';
 import 'settings_controller.dart';
 import 'open_quickly.dart';
@@ -60,6 +61,7 @@ class _HomeShellState extends State<HomeShell> {
   late final EditorController _editor;
   late final WorkspaceController _workspace;
   late final ThemeManager _themeManager;
+  late final DocTabs _tabs;
 
   bool _sidebarVisible = true;
   bool _alwaysOnTop = false;
@@ -73,6 +75,7 @@ class _HomeShellState extends State<HomeShell> {
     _editor = context.read<EditorController>();
     _workspace = context.read<WorkspaceController>();
     _themeManager = context.read<ThemeManager>();
+    _tabs = DocTabs(_doc);
     _doc.addListener(_syncWindowTitle);
     _syncWindowTitle();
     _editor.linkOpener = (url) => _openLink(url);
@@ -84,6 +87,7 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   void dispose() {
+    _tabs.dispose();
     _editor.linkOpener = null;
     _doc.removeListener(_syncWindowTitle);
     if (!kIsWeb) {
@@ -118,9 +122,53 @@ class _HomeShellState extends State<HomeShell> {
 
   Future<void> _handleWindowClose() async {
     _editor.commitSourceMode?.call();
-    if (await _confirmLoseChanges()) {
+    if (await _confirmCloseAllTabs()) {
       await destroyWindow();
     }
+  }
+
+  // ---- Document tabs ----
+
+  /// Parks the live editor before any tab state swap.
+  void _prepareForTabSwitch() {
+    _editor.commitSourceMode?.call();
+    _editor.sourceModeEnabled.value = false;
+    _editor.blur();
+  }
+
+  void _newTab() {
+    _prepareForTabSwitch();
+    _tabs.newTab();
+  }
+
+  void _selectTab(int i) {
+    if (i == _tabs.activeIndex) return;
+    _prepareForTabSwitch();
+    _tabs.select(i);
+  }
+
+  /// Close tab [i] (confirm-if-dirty); with one tab, closes the window.
+  Future<void> _closeTab(int i) async {
+    if (_tabs.length <= 1) {
+      await _handleWindowClose();
+      return;
+    }
+    _selectTab(i); // the confirm flow always runs on the live document
+    if (!await _confirmLoseChanges()) return;
+    _prepareForTabSwitch();
+    _tabs.closeTab(_tabs.activeIndex);
+  }
+
+  /// Runs the save/discard/cancel flow for every dirty tab (window close
+  /// and quit). Each dirty tab is brought forward so the user sees what
+  /// the dialog is about.
+  Future<bool> _confirmCloseAllTabs() async {
+    for (var i = 0; i < _tabs.length; i++) {
+      if (!_tabs.dirtyOf(i)) continue;
+      _selectTab(i);
+      if (!await _confirmLoseChanges()) return false;
+    }
+    return true;
   }
 
   // ---- Confirm-if-dirty flow ----
@@ -661,7 +709,7 @@ class _HomeShellState extends State<HomeShell> {
   /// the platform-provided quit item would terminate without asking.
   Future<void> _quit() async {
     _editor.commitSourceMode?.call();
-    if (await _confirmLoseChanges()) {
+    if (await _confirmCloseAllTabs()) {
       await destroyWindow();
     }
   }
@@ -765,6 +813,12 @@ class _HomeShellState extends State<HomeShell> {
         openRecent: _openPath,
         save: _saveDocument,
         saveAs: _saveDocumentAs,
+        newTab: _newTab,
+        closeTab: () => _closeTab(_tabs.activeIndex),
+        nextTab: () =>
+            _selectTab((_tabs.activeIndex + 1) % _tabs.length),
+        previousTab: () => _selectTab(
+            (_tabs.activeIndex - 1 + _tabs.length) % _tabs.length),
         paste: _paste,
         importFile: _importFile,
         exportPandoc: _exportPandoc,
@@ -964,17 +1018,53 @@ class _HomeShellState extends State<HomeShell> {
     }
   }
 
+  /// Tab strip above the editor; hidden while there is only one tab.
+  Widget _buildTabBar(ReadmeTheme theme) {
+    return ListenableBuilder(
+      listenable: _tabs,
+      builder: (context, _) {
+        if (_tabs.length < 2) return const SizedBox.shrink();
+        return Container(
+          height: 32,
+          color: theme.sidebarBackground,
+          child: Row(
+            children: [
+              for (var i = 0; i < _tabs.length; i++)
+                Expanded(
+                  child: _DocTabButton(
+                    title:
+                        '${_tabs.titleOf(i)}${_tabs.dirtyOf(i) ? ' •' : ''}',
+                    selected: i == _tabs.activeIndex,
+                    theme: theme,
+                    onTap: () => _selectTab(i),
+                    onClose: () => _closeTab(i),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildEditorArea() {
     return DropTarget(
       onDragDone: _onDropDone,
       child: Stack(
         children: [
           Positioned.fill(
-            child: ValueListenableBuilder<bool>(
-              valueListenable: _editor.sourceModeEnabled,
-              builder: (context, sourceMode, _) => sourceMode
-                  ? SourceView(editor: _editor)
-                  : EditorView(editor: _editor),
+            child: Column(
+              children: [
+                _buildTabBar(_editor.theme),
+                Expanded(
+                  child: ValueListenableBuilder<bool>(
+                    valueListenable: _editor.sourceModeEnabled,
+                    builder: (context, sourceMode, _) => sourceMode
+                        ? SourceView(editor: _editor)
+                        : EditorView(editor: _editor),
+                  ),
+                ),
+              ],
             ),
           ),
           Positioned(
@@ -988,6 +1078,66 @@ class _HomeShellState extends State<HomeShell> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _DocTabButton extends StatelessWidget {
+  const _DocTabButton({
+    required this.title,
+    required this.selected,
+    required this.theme,
+    required this.onTap,
+    required this.onClose,
+  });
+
+  final String title;
+  final bool selected;
+  final ReadmeTheme theme;
+  final VoidCallback onTap;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = selected
+        ? (theme.sidebarActiveForeground ?? theme.foreground)
+        : theme.sidebarForeground;
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: BoxDecoration(
+          color: selected ? theme.background : Colors.transparent,
+          border: Border(
+            right: BorderSide(
+                color: theme.sidebarForeground.withValues(alpha: 0.15)),
+            top: BorderSide(
+              width: 2,
+              color: selected ? theme.accent : Colors.transparent,
+            ),
+          ),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                  color: fg,
+                ),
+              ),
+            ),
+            InkWell(
+              onTap: onClose,
+              child: Icon(Icons.close, size: 13, color: fg),
+            ),
+          ],
+        ),
       ),
     );
   }

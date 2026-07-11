@@ -21,6 +21,10 @@ class AppMenuCallbacks {
   const AppMenuCallbacks({
     required this.about,
     required this.newFile,
+    required this.newTab,
+    required this.closeTab,
+    required this.nextTab,
+    required this.previousTab,
     required this.openFile,
     required this.openFolder,
     required this.openRecent,
@@ -58,6 +62,12 @@ class AppMenuCallbacks {
 
   final VoidCallback about;
   final VoidCallback newFile;
+  final VoidCallback newTab;
+
+  /// Closes the active tab; with a single tab this closes the window.
+  final VoidCallback closeTab;
+  final VoidCallback nextTab;
+  final VoidCallback previousTab;
   final VoidCallback openFile;
   final VoidCallback openFolder;
   final void Function(String path) openRecent;
@@ -180,6 +190,18 @@ List<PlatformMenu> buildPlatformMenus({
               shortcut:
                   const SingleActivator(LogicalKeyboardKey.keyN, meta: true),
               onSelected: actions.newFile,
+            ),
+            PlatformMenuItem(
+              label: 'New Tab',
+              shortcut:
+                  const SingleActivator(LogicalKeyboardKey.keyT, meta: true),
+              onSelected: actions.newTab,
+            ),
+            PlatformMenuItem(
+              label: 'Close Tab',
+              shortcut:
+                  const SingleActivator(LogicalKeyboardKey.keyW, meta: true),
+              onSelected: actions.closeTab,
             ),
             PlatformMenuItem(
               label: 'Open…',
@@ -962,6 +984,22 @@ List<PlatformMenu> buildPlatformMenus({
         ),
         PlatformMenuItemGroup(
           members: [
+            PlatformMenuItem(
+              label: 'Show Next Tab',
+              shortcut: const SingleActivator(LogicalKeyboardKey.bracketRight,
+                  meta: true, shift: true),
+              onSelected: actions.nextTab,
+            ),
+            PlatformMenuItem(
+              label: 'Show Previous Tab',
+              shortcut: const SingleActivator(LogicalKeyboardKey.bracketLeft,
+                  meta: true, shift: true),
+              onSelected: actions.previousTab,
+            ),
+          ],
+        ),
+        PlatformMenuItemGroup(
+          members: [
             if (PlatformProvidedMenuItem.hasMenu(
                 PlatformProvidedMenuItemType.toggleFullScreen))
               const PlatformProvidedMenuItem(
@@ -1031,6 +1069,16 @@ class AppMenuBar extends StatelessWidget {
               onPressed: actions.newFile,
               shortcut: cmd(LogicalKeyboardKey.keyN),
               child: const Text('New'),
+            ),
+            MenuItemButton(
+              onPressed: actions.newTab,
+              shortcut: cmd(LogicalKeyboardKey.keyT),
+              child: const Text('New Tab'),
+            ),
+            MenuItemButton(
+              onPressed: actions.closeTab,
+              shortcut: cmd(LogicalKeyboardKey.keyW),
+              child: const Text('Close Tab'),
             ),
             MenuItemButton(
               onPressed: actions.openFile,

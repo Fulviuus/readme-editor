@@ -422,4 +422,41 @@ void main() {
       expect(c.serialize(), '');
     });
   });
+
+  group('captureState/restoreState (tabs)', () {
+    test('round-trips content, file binding, dirty flag and undo', () {
+      final c = DocumentController()..loadText('one', path: '/tmp/a.md');
+      type(c, c.doc.blocks.single.id, 'one!', caretBefore: 3);
+      expect(c.dirty, isTrue);
+      final tabA = c.captureState();
+
+      c.restoreState(DocumentState.empty());
+      expect(c.serialize(), '');
+      expect(c.filePath, isNull);
+      expect(c.dirty, isFalse);
+      expect(c.canUndo, isFalse);
+
+      c.restoreState(tabA);
+      expect(c.serialize(), 'one!');
+      expect(c.filePath, '/tmp/a.md');
+      expect(c.dirty, isTrue);
+      expect(c.canUndo, isTrue);
+      c.undo();
+      expect(c.serialize(), 'one');
+    });
+
+    test('edits in one tab never leak into another', () {
+      final c = DocumentController()..loadText('tab one');
+      final tabA = c.captureState();
+      c.restoreState(DocumentState.empty());
+      type(c, c.doc.blocks.single.id, 'tab two text', caretBefore: 0);
+      final tabB = c.captureState();
+
+      c.restoreState(tabA);
+      expect(c.serialize(), 'tab one');
+      c.restoreState(tabB);
+      // Fresh (empty) documents write a final newline once they have text.
+      expect(c.serialize(), 'tab two text\n');
+    });
+  });
 }

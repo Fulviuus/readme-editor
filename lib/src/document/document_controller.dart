@@ -78,6 +78,26 @@ class DocEdit {
 
 const _wordBoundaryChars = {' ', '\t', '\n', '.', ',', ';', ':', '!', '?'};
 
+/// Opaque per-tab snapshot; see [DocumentController.captureState].
+class DocumentState {
+  DocumentState._(this._doc, this._filePath, this._undo, this._redo,
+      this._revision, this._savedRevision);
+
+  /// A fresh empty document (a new tab).
+  factory DocumentState.empty() =>
+      DocumentState._(Document.parse(''), null, [], [], 0, 0);
+
+  final Document _doc;
+  final String? _filePath;
+  final List<DocEdit> _undo;
+  final List<DocEdit> _redo;
+  final int _revision;
+  final int _savedRevision;
+
+  String? get filePath => _filePath;
+  bool get dirty => _revision != _savedRevision;
+}
+
 class DocumentController extends ChangeNotifier {
   DocumentController() : _doc = Document(blocks: []);
 
@@ -140,6 +160,30 @@ class DocumentController extends ChangeNotifier {
     _redoStack.clear();
     _revision = 0;
     _savedRevision = 0;
+    notifyListeners();
+  }
+
+  // ---- Tab support: whole-state capture/restore ----
+
+  /// Snapshot of everything a document tab owns: content, file binding,
+  /// undo history and dirty tracking. While a tab is inactive its snapshot
+  /// is the sole owner of the [Document] instance inside.
+  DocumentState captureState() => DocumentState._(_doc, filePath,
+      [..._undoStack], [..._redoStack], _revision, _savedRevision);
+
+  /// Swaps the controller onto [state] (a tab switch). The outgoing state
+  /// must have been [captureState]d first or it is lost.
+  void restoreState(DocumentState state) {
+    _doc = state._doc;
+    filePath = state._filePath;
+    _undoStack
+      ..clear()
+      ..addAll(state._undo);
+    _redoStack
+      ..clear()
+      ..addAll(state._redo);
+    _revision = state._revision;
+    _savedRevision = state._savedRevision;
     notifyListeners();
   }
 
