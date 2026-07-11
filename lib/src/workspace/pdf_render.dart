@@ -376,6 +376,13 @@ class _PdfRenderer {
           break; // tags dropped (underline pairs included — no glyphs)
         case CommentNode():
           break;
+        case MathNode():
+          // The PDF pipeline has no TeX layout; the raw TeX in mono is the
+          // honest fallback.
+          out.add(pw.TextSpan(
+              text: (s.substring(n.contentStart, n.contentEnd)),
+              style: style.copyWith(
+                  font: mono, fontSize: size * theme.codeInlineFontScale)));
       }
     }
   }

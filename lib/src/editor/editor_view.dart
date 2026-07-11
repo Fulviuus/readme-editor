@@ -115,9 +115,11 @@ class _EditorViewState extends State<EditorView> {
                   final block = blocks[i];
                   return KeyedSubtree(
                     key: ValueKey<String>(block.id),
+                    // Tight width: blocks that shrink-wrap (a short
+                    // paragraph) must still fill the column, not center.
                     child: Center(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(maxWidth: contentWidth),
+                      child: SizedBox(
+                        width: contentWidth,
                         child: _BlockItem(block: block, editor: editor),
                       ),
                     ),

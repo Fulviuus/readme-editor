@@ -12,6 +12,7 @@
 library;
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter_math_fork/flutter_math.dart' show Math, MathStyle;
 
 import '../document/block.dart';
 import '../theme/readme_theme.dart';
@@ -213,6 +214,23 @@ class InlineRenderer {
           }
         case CommentNode():
           rb.hidden(node.start, node.end);
+        case MathNode():
+          final st = active();
+          spans.add(WidgetSpan(
+            alignment: PlaceholderAlignment.baseline,
+            baseline: TextBaseline.alphabetic,
+            child: Math.tex(
+              s.substring(node.contentStart, node.contentEnd),
+              mathStyle: MathStyle.text,
+              textStyle: st,
+              // Invalid TeX: show the literal source, dimmed.
+              onErrorFallback: (_) => Text(
+                  s.substring(node.start, node.end),
+                  style: st.copyWith(color: theme.syntaxMarkerColor)),
+            ),
+          ));
+          rb.atomic(node.start, node.end, 1);
+          out.write('￼');
       }
     }
     return spans;
@@ -345,6 +363,11 @@ class InlineRenderer {
           put(node.labelEnd, node.end, style.merge(marker));
         case FootnoteRefNode():
           put(node.start, node.end, style.merge(theme.linkStyle));
+        case MathNode():
+          put(node.start, node.contentStart, style.merge(marker));
+          put(node.contentStart, node.contentEnd,
+              style.copyWith(color: theme.accent));
+          put(node.contentEnd, node.end, style.merge(marker));
       }
     }
     return spans;
@@ -378,6 +401,8 @@ class InlineRenderer {
             n.labelEnd + d, n.reference,
             n.children.map((c) => _shift(c, d)).toList(growable: false)),
         FootnoteRefNode() => FootnoteRefNode(n.start + d, n.end + d, n.id),
+        MathNode() => MathNode(
+            n.start + d, n.end + d, n.contentStart + d, n.contentEnd + d),
       };
 
   TextSpan _buildHeadingSpan(String source, int level, TextStyle marker) {

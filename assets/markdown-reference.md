@@ -72,6 +72,8 @@ The source stays aligned automatically.
 ## Other blocks
 
 - `---` on its own line is a horizontal rule.
-- `$$ … $$` is a math block.
+- `$$ … $$` is a math block, rendered as centered display math.
+- `$tex$` renders inline math, like $e^{i\pi} + 1 = 0$. Delimiters must hug
+  the TeX (no space just inside), so prices like $5 stay plain text.
 - `[TOC]` renders a live table of contents.
 - A `---` fenced block at the very top is YAML front matter.

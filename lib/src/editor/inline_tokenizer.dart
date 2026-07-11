@@ -102,6 +102,12 @@ class FootnoteRefNode extends InlineNode {
   final String id;
 }
 
+/// Inline math: `$tex$`. [contentStart]/[contentEnd] bound the TeX source.
+class MathNode extends InlineNode {
+  MathNode(super.start, super.end, this.contentStart, this.contentEnd);
+  final int contentStart, contentEnd;
+}
+
 /// Normalizes a link-reference label the way CommonMark does.
 String normalizeReference(String label) =>
     label.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
@@ -151,6 +157,8 @@ String plainTextOfInline(String s) {
           walk(n.children);
         case FootnoteRefNode():
           break;
+        case MathNode():
+          buf.write(s.substring(n.contentStart, n.contentEnd));
       }
     }
   }
@@ -255,6 +263,22 @@ List<InlineNode> _parse(String s, int from, int to) {
       }
     }
 
+    // Inline math: `$tex$` — no space just inside either `$`, one line,
+    // and the closer must not be followed by a digit, so prices like
+    // "$5 and $6" stay plain text.
+    if (c == r'$') {
+      final close = _findMathClose(s, i + 1, to);
+      if (close >= 0) {
+        flushText(i);
+        nodes.add(MathNode(i, close + 1, i + 1, close));
+        i = close + 1;
+        textStart = i;
+        continue;
+      }
+      i++;
+      continue;
+    }
+
     // Emphasis / strong / strikethrough.
     if (c == '*' || c == '_' || c == '~') {
       final l = runLen(i, c);
@@ -340,6 +364,35 @@ List<InlineNode> _parse(String s, int from, int to) {
 
   flushText(to);
   return nodes;
+}
+
+final _digit = RegExp(r'\d');
+
+/// Finds the closing `$` of an inline math span whose opener sits just
+/// before [from]. Content must be non-empty and single-line, with no space
+/// just inside either delimiter; the closer must not be followed by a digit.
+/// `\$` inside the TeX does not close. Returns the closer's index or -1 —
+/// giving up at the first invalid closer keeps "$5 or $x$" parsing `$x$`.
+int _findMathClose(String s, int from, int to) {
+  if (from >= to || s[from] == ' ' || s[from] == r'$') return -1;
+  if (to - from > _scanWindow) to = from + _scanWindow;
+  var j = from;
+  while (j < to) {
+    final c = s[j];
+    if (c == '\n') return -1;
+    if (c == r'\' && j + 1 < to) {
+      j += 2;
+      continue;
+    }
+    if (c == r'$') {
+      final valid = j > from &&
+          s[j - 1] != ' ' &&
+          (j + 1 >= to || !_digit.hasMatch(s[j + 1]));
+      return valid ? j : -1;
+    }
+    j++;
+  }
+  return -1;
 }
 
 /// Finds a closing run of exactly [n] backticks; returns its start or -1.

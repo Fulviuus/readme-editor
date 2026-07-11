@@ -157,6 +157,41 @@ void main() {
       expect(fn.id, '1');
       expect((fn.start, fn.end), (4, 8));
     });
+
+    test('inline math', () {
+      final m = tokenizeInline(r'so $x^2 + y$ holds')
+          .whereType<MathNode>()
+          .single;
+      expect((m.start, m.end), (3, 12));
+      expect((m.contentStart, m.contentEnd), (4, 11));
+    });
+
+    test(r'prices are not math: closer followed by a digit', () {
+      expect(tokenizeInline(r'costs $5 vs $6 total').whereType<MathNode>(),
+          isEmpty);
+    });
+
+    test(r'price then math: $5 or $x$ parses only $x$', () {
+      final m =
+          tokenizeInline(r'$5 or $x$').whereType<MathNode>().single;
+      expect((m.contentStart, m.contentEnd), (7, 8));
+    });
+
+    test('space just inside a delimiter is not math', () {
+      expect(tokenizeInline(r'a $ x$ b').whereType<MathNode>(), isEmpty);
+      expect(tokenizeInline(r'a $x $ b').whereType<MathNode>(), isEmpty);
+    });
+
+    test('math does not span lines and needs content', () {
+      expect(tokenizeInline('a \$x\ny\$ b').whereType<MathNode>(), isEmpty);
+      expect(tokenizeInline(r'a $$ b').whereType<MathNode>(), isEmpty);
+    });
+
+    test(r'escaped \$ neither opens nor closes math', () {
+      expect(tokenizeInline(r'pay \$10 now').whereType<MathNode>(), isEmpty);
+      final m = tokenizeInline(r'$a\$b$').whereType<MathNode>().single;
+      expect((m.contentStart, m.contentEnd), (1, 5));
+    });
   });
 
   group('plainTextOfInline', () {
@@ -169,6 +204,10 @@ void main() {
     test('keeps image alt text', () {
       expect(plainTextOfInline('see ![a cat](cat.png) here'),
           'see a cat here');
+    });
+
+    test('keeps math content without delimiters', () {
+      expect(plainTextOfInline(r'so $x^2$ holds'), 'so x^2 holds');
     });
   });
 }

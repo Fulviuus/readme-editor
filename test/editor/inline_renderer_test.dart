@@ -65,6 +65,22 @@ void main() {
       }
     });
 
+    test('inline math renders as one atomic placeholder', () {
+      const src = r'so $x^2$ holds';
+      final res = r.renderInline(src, baseStyle: base);
+      expect(res.renderedText, 'so \u{FFFC} holds');
+      expect(spanText(res.span), res.renderedText);
+      // Clicking the placeholder or crossing it maps to the math's edges.
+      expect(renderedToSource(res.runs, 3), 3);
+      expect(renderedToSource(res.runs, 4), 8);
+    });
+
+    test('math editing span preserves every character', () {
+      const src = r'so $x^2$ holds';
+      final span = r.buildEditingSpan(src, BlockKind.paragraph);
+      expect(spanText(span), src);
+    });
+
     test('renderedToSource maps clicks through hidden markers', () {
       const src = 'x **bold** y';
       final res = r.renderInline(src, baseStyle: base);

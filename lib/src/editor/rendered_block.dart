@@ -6,6 +6,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
+import 'package:flutter_math_fork/flutter_math.dart' show Math, MathStyle;
 
 import '../document/block.dart';
 import '../theme/readme_theme.dart';
@@ -40,7 +41,7 @@ class RenderedBlock extends StatelessWidget {
       BlockKind.fencedCode ||
       BlockKind.indentedCode =>
         CodeBlockView(block: block, editor: editor),
-      BlockKind.mathBlock => _verbatimBox(theme, label: 'math'),
+      BlockKind.mathBlock => _mathBlock(theme),
       BlockKind.html => _verbatimBox(theme, label: 'html'),
       BlockKind.frontMatter => _verbatimBox(theme, label: 'front matter'),
     };
@@ -278,6 +279,41 @@ class RenderedBlock extends StatelessWidget {
         height: theme.hrHeight,
         margin: EdgeInsets.symmetric(vertical: theme.fontSize * 0.3),
         color: theme.hr,
+      ),
+    );
+  }
+
+  /// `$$ … $$` renders as centered display math. Wide formulas scale down
+  /// instead of overflowing; invalid TeX falls back to the source box.
+  Widget _mathBlock(ReadmeTheme theme) {
+    final tex = block.codeBody;
+    if (tex.isEmpty) return _verbatimBox(theme, label: 'math');
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _focusAt(block.source.length),
+      child: Container(
+        width: double.infinity,
+        padding: EdgeInsets.symmetric(vertical: theme.fontSize * 0.4),
+        alignment: Alignment.center,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Math.tex(
+            tex,
+            mathStyle: MathStyle.display,
+            textStyle:
+                theme.bodyStyle.copyWith(fontSize: theme.fontSize * 1.15),
+            onErrorFallback: (e) => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(tex, style: theme.monoStyle),
+                Text(e.message,
+                    style: theme.monoStyle.copyWith(
+                        fontSize: theme.fontSize * 0.7,
+                        color: theme.hintColor)),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
