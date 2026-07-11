@@ -34,6 +34,8 @@ class AppMenuCallbacks {
     required this.alwaysOnTop,
     required this.toggleAlwaysOnTop,
     required this.insertTable,
+    required this.insertImage,
+    required this.insertLocalImages,
     required this.activeSidebarPane,
     required this.selectSidebarPane,
   });
@@ -53,6 +55,8 @@ class AppMenuCallbacks {
   final bool alwaysOnTop;
   final VoidCallback toggleAlwaysOnTop;
   final VoidCallback insertTable;
+  final VoidCallback insertImage;
+  final VoidCallback insertLocalImages;
   final SidebarPane activeSidebarPane;
   final void Function(SidebarPane pane) selectSidebarPane;
 }
@@ -401,6 +405,19 @@ List<PlatformMenu> buildPlatformMenus({
             PlatformMenuItem(
               label: 'Copy Link Address',
               onSelected: editor.copyLinkAtCaret,
+            ),
+            PlatformMenu(
+              label: 'Image',
+              menus: [
+                PlatformMenuItemGroup(members: [
+                  PlatformMenuItem(
+                      label: 'Insert Image…',
+                      onSelected: actions.insertImage),
+                  PlatformMenuItem(
+                      label: 'Insert Local Images…',
+                      onSelected: actions.insertLocalImages),
+                ]),
+              ],
             ),
             PlatformMenuItem(
               label: 'Clear Format',
@@ -1091,6 +1108,17 @@ class AppMenuBar extends StatelessWidget {
             MenuItemButton(
               onPressed: editor.copyLinkAtCaret,
               child: const Text('Copy Link Address'),
+            ),
+            SubmenuButton(
+              menuChildren: [
+                MenuItemButton(
+                    onPressed: actions.insertImage,
+                    child: const Text('Insert Image…')),
+                MenuItemButton(
+                    onPressed: actions.insertLocalImages,
+                    child: const Text('Insert Local Images…')),
+              ],
+              child: const Text('Image'),
             ),
             MenuItemButton(
               onPressed: editor.clearFormat,

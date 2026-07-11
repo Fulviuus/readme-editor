@@ -1215,6 +1215,29 @@ class EditorController extends ChangeNotifier {
     }
   }
 
+  /// Inserts `![alt](url)` at the caret of the focused block, or as a new
+  /// standalone image paragraph after the focused block when none/opaque.
+  void insertImage(String url, {String alt = ''}) {
+    final markdown = '![$alt]($url)';
+    final block = focusedBlock;
+    const inlineable = {
+      BlockKind.paragraph,
+      BlockKind.heading,
+      BlockKind.blockquote,
+      BlockKind.list,
+    };
+    if (block != null && inlineable.contains(block.kind)) {
+      final sel = editing.selection;
+      if (sel.isValid) {
+        replaceRange(sel.start, sel.end, markdown, kind: EditKind.paste);
+        return;
+      }
+    }
+    _insertBlocksAfterFocused(
+        [Block(kind: BlockKind.paragraph, source: markdown)],
+        focusOffset: 0);
+  }
+
   /// Cmd+1..6 sets the heading level; Cmd+0 (or the current level again)
   /// makes it a paragraph. Paragraph/heading blocks only.
   void setHeadingLevel(int n) {

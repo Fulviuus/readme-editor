@@ -5,6 +5,7 @@
 library;
 
 import 'package:desktop_drop/desktop_drop.dart';
+import 'package:file_selector/file_selector.dart' show XTypeGroup, openFiles;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -275,6 +276,70 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 
+  /// Format > Image > Insert Image…: URL + alt-text dialog.
+  Future<void> _insertImageDialog() async {
+    final urlCtrl = TextEditingController();
+    final altCtrl = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Insert Image'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: urlCtrl,
+              autofocus: true,
+              decoration: const InputDecoration(
+                  labelText: 'Image URL or path',
+                  hintText: 'https://… or images/pic.png'),
+            ),
+            TextField(
+              controller: altCtrl,
+              decoration:
+                  const InputDecoration(labelText: 'Alt text (optional)'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Insert'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && urlCtrl.text.trim().isNotEmpty) {
+      _editor.insertImage(urlCtrl.text.trim(), alt: altCtrl.text.trim());
+    }
+    urlCtrl.dispose();
+    altCtrl.dispose();
+  }
+
+  /// Format > Image > Insert Local Images…: file picker; paths are stored
+  /// relative to the document's folder when possible.
+  Future<void> _insertLocalImages() async {
+    const group = XTypeGroup(label: 'Images', extensions: <String>[
+      'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg',
+    ]);
+    final files = await openFiles(acceptedTypeGroups: const [group]);
+    if (files.isEmpty) return;
+    final docDir =
+        _doc.filePath == null ? null : p.dirname(_doc.filePath!);
+    for (final file in files) {
+      var path = file.path;
+      if (docDir != null && p.isWithin(docDir, path)) {
+        path = p.relative(path, from: docDir);
+      }
+      _editor.insertImage(path,
+          alt: p.basenameWithoutExtension(file.name));
+    }
+  }
+
   /// Quit via the same confirm-if-dirty flow as the window close button —
   /// the platform-provided quit item would terminate without asking.
   Future<void> _quit() async {
@@ -377,6 +442,8 @@ class _HomeShellState extends State<HomeShell> {
         alwaysOnTop: _alwaysOnTop,
         toggleAlwaysOnTop: _toggleAlwaysOnTop,
         insertTable: _insertTableDialog,
+        insertImage: _insertImageDialog,
+        insertLocalImages: _insertLocalImages,
         activeSidebarPane: _sidebarPane,
         selectSidebarPane: _selectSidebarPane,
       );

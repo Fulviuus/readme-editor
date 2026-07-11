@@ -690,6 +690,24 @@ void main() {
     });
   });
 
+  group('insert image', () {
+    test('inserts inline at the caret of a paragraph', () {
+      doc.loadText('before  after');
+      editor.focusBlock(doc.doc.blocks.first.id, offset: 7);
+      editor.insertImage('pics/cat.png', alt: 'cat');
+      expect(doc.doc.blocks.single.source,
+          'before ![cat](pics/cat.png) after');
+    });
+
+    test('adds a standalone image block after an opaque block', () {
+      doc.loadText('```\nx\n```');
+      editor.focusBlock(doc.doc.blocks.first.id);
+      editor.insertImage('shot.png');
+      expect(doc.doc.blocks, hasLength(2));
+      expect(doc.doc.blocks[1].source, '![](shot.png)');
+    });
+  });
+
   group('link actions (issue #38)', () {
     test('linkUrlAtCaret finds the link under the caret', () {
       doc.loadText('see [docs](https://x.dev) and https://a.b end');
