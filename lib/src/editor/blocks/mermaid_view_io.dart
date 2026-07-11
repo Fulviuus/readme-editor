@@ -5,6 +5,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -15,8 +16,9 @@ import '../../theme/readme_theme.dart';
 import '../editor_controller.dart';
 import 'code_block.dart';
 
-/// Whether this platform renders mermaid diagrams.
-const bool mermaidSupported = true;
+/// Whether this platform renders mermaid diagrams: the webview plugin
+/// covers macOS/Windows (WebView2)/iOS/Android but not Linux desktop.
+final bool mermaidSupported = !Platform.isLinux;
 
 /// The engine is ~2.7 MB of JS; load it from the bundle once.
 Future<String>? _mermaidJs;
@@ -58,6 +60,9 @@ class _MermaidBlockViewState extends State<MermaidBlockView> {
 
   @override
   Widget build(BuildContext context) {
+    if (!mermaidSupported) {
+      return CodeBlockView(block: widget.block, editor: widget.editor);
+    }
     final theme = widget.editor.theme;
     final body = widget.block.codeBody;
     if (_error != null) return _errorFallback(theme);
