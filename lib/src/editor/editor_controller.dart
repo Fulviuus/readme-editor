@@ -1636,6 +1636,14 @@ class EditorController extends ChangeNotifier {
     ], focusOffset: 1);
   }
 
+  /// Inserts a `[TOC]` block (rendered as a live outline) after the focused
+  /// block.
+  void insertTableOfContents() {
+    _insertBlocksAfterFocused(
+        [Block(kind: BlockKind.paragraph, source: '[TOC]')],
+        focusOffset: 0);
+  }
+
   /// Inserts a YAML front-matter block at the top of the document.
   void insertFrontMatter() {
     if (docCtrl.doc.blocks.first.kind == BlockKind.frontMatter) {

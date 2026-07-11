@@ -9,9 +9,13 @@ library;
 export 'file_io_web.dart'
     if (dart.library.io) 'file_io_io.dart'
     show
+        duplicateFile,
         listMarkdownTree,
         readTextFile,
+        renameFile,
+        revealInFileManager,
         supportsFileSystem,
+        trashFile,
         watchFolder,
         writeTextFile;
 

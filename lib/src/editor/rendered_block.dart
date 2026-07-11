@@ -48,6 +48,8 @@ class RenderedBlock extends StatelessWidget {
   }
 
   Widget _paragraph(ReadmeTheme theme) {
+    // `[TOC]` renders as a live table of contents.
+    if (block.source.trim() == '[TOC]') return _toc(theme);
     // A paragraph that is exactly one image renders as an image block.
     final nodes = tokenizeInline(block.source);
     if (nodes.length == 1 && nodes.first is ImageNode) {
@@ -136,6 +138,46 @@ class RenderedBlock extends StatelessWidget {
       behavior: HitTestBehavior.translucent,
       onTap: () => _focusAt(block.source.length),
       child: text,
+    );
+  }
+
+  /// `[TOC]` → a clickable outline of the document's headings.
+  Widget _toc(ReadmeTheme theme) {
+    final entries = editor.docCtrl.doc.outline;
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: () => _focusAt(block.source.length),
+      child: Container(
+        width: double.infinity,
+        padding: EdgeInsets.symmetric(vertical: theme.fontSize * 0.3),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (entries.isEmpty)
+              Text('[TOC] — no headings yet',
+                  style: theme.bodyStyle.copyWith(color: theme.hintColor))
+            else
+              for (final e in entries)
+                Padding(
+                  padding: EdgeInsets.only(
+                      left: (e.level - 1) * theme.fontSize * 1.1,
+                      top: 2,
+                      bottom: 2),
+                  child: GestureDetector(
+                    onTap: () => editor.focusBlock(e.blockId, offset: 0),
+                    child: Text(
+                      e.text.isEmpty ? '(untitled)' : e.text,
+                      style: theme.bodyStyle.copyWith(
+                        color: theme.link,
+                        decoration: TextDecoration.underline,
+                        decorationColor: theme.link.withValues(alpha: 0.4),
+                      ),
+                    ),
+                  ),
+                ),
+          ],
+        ),
+      ),
     );
   }
 

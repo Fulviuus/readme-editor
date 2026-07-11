@@ -39,6 +39,15 @@ class AppMenuCallbacks {
     required this.insertLocalImages,
     required this.activeSidebarPane,
     required this.selectSidebarPane,
+    required this.hasFilePath,
+    required this.revealFile,
+    required this.duplicateFile,
+    required this.renameFile,
+    required this.deleteFile,
+    required this.autosave,
+    required this.toggleAutosave,
+    required this.openMarkdownReference,
+    required this.openQuickStart,
   });
 
   final VoidCallback about;
@@ -61,6 +70,15 @@ class AppMenuCallbacks {
   final VoidCallback insertLocalImages;
   final SidebarPane activeSidebarPane;
   final void Function(SidebarPane pane) selectSidebarPane;
+  final bool hasFilePath;
+  final VoidCallback revealFile;
+  final VoidCallback duplicateFile;
+  final VoidCallback renameFile;
+  final VoidCallback deleteFile;
+  final bool autosave;
+  final VoidCallback toggleAutosave;
+  final VoidCallback openMarkdownReference;
+  final VoidCallback openQuickStart;
 }
 
 /// Routes a text-editing intent to the currently focused editable field.
@@ -199,6 +217,27 @@ List<PlatformMenu> buildPlatformMenus({
               shortcut: const SingleActivator(LogicalKeyboardKey.keyS,
                   meta: true, shift: true),
               onSelected: actions.saveAs,
+            ),
+          ],
+        ),
+        if (actions.hasFilePath)
+          PlatformMenuItemGroup(
+            members: [
+              PlatformMenuItem(
+                  label: 'Reveal in Finder', onSelected: actions.revealFile),
+              PlatformMenuItem(
+                  label: 'Duplicate', onSelected: actions.duplicateFile),
+              PlatformMenuItem(
+                  label: 'Rename…', onSelected: actions.renameFile),
+              PlatformMenuItem(
+                  label: 'Move to Trash…', onSelected: actions.deleteFile),
+            ],
+          ),
+        PlatformMenuItemGroup(
+          members: [
+            PlatformMenuItem(
+              label: actions.autosave ? '✓ Autosave' : 'Autosave',
+              onSelected: actions.toggleAutosave,
             ),
           ],
         ),
@@ -728,6 +767,10 @@ List<PlatformMenu> buildPlatformMenus({
         PlatformMenuItemGroup(
           members: [
             PlatformMenuItem(
+              label: 'Table of Contents',
+              onSelected: editor.insertTableOfContents,
+            ),
+            PlatformMenuItem(
               label: 'Horizontal Line',
               onSelected: editor.insertHorizontalRule,
             ),
@@ -868,6 +911,20 @@ List<PlatformMenu> buildPlatformMenus({
         ),
       ],
     ),
+    PlatformMenu(
+      label: 'Help',
+      menus: [
+        PlatformMenuItemGroup(
+          members: [
+            PlatformMenuItem(
+                label: 'Quick Start', onSelected: actions.openQuickStart),
+            PlatformMenuItem(
+                label: 'Markdown Reference',
+                onSelected: actions.openMarkdownReference),
+          ],
+        ),
+      ],
+    ),
   ];
 }
 
@@ -959,6 +1016,29 @@ class AppMenuBar extends StatelessWidget {
               onPressed: actions.saveAs,
               shortcut: cmd(LogicalKeyboardKey.keyS, shift: true),
               child: const Text('Save As…'),
+            ),
+            if (actions.hasFilePath) ...[
+              const Divider(height: 8),
+              MenuItemButton(
+                  onPressed: actions.revealFile,
+                  child: const Text('Reveal in File Manager')),
+              MenuItemButton(
+                  onPressed: actions.duplicateFile,
+                  child: const Text('Duplicate')),
+              MenuItemButton(
+                  onPressed: actions.renameFile,
+                  child: const Text('Rename…')),
+              MenuItemButton(
+                  onPressed: actions.deleteFile,
+                  child: const Text('Move to Trash…')),
+            ],
+            const Divider(height: 8),
+            MenuItemButton(
+              onPressed: actions.toggleAutosave,
+              leadingIcon: actions.autosave
+                  ? const Icon(Icons.check, size: 16)
+                  : const SizedBox(width: 16),
+              child: const Text('Autosave'),
             ),
             const Divider(height: 8),
             MenuItemButton(
@@ -1345,6 +1425,10 @@ class AppMenuBar extends StatelessWidget {
             ),
             const Divider(height: 8),
             MenuItemButton(
+              onPressed: editor.insertTableOfContents,
+              child: const Text('Table of Contents'),
+            ),
+            MenuItemButton(
               onPressed: editor.insertHorizontalRule,
               child: const Text('Horizontal Line'),
             ),
@@ -1459,6 +1543,17 @@ class AppMenuBar extends StatelessWidget {
             ),
           ],
           child: const MenuAcceleratorLabel('&Window'),
+        ),
+        SubmenuButton(
+          menuChildren: [
+            MenuItemButton(
+                onPressed: actions.openQuickStart,
+                child: const Text('Quick Start')),
+            MenuItemButton(
+                onPressed: actions.openMarkdownReference,
+                child: const Text('Markdown Reference')),
+          ],
+          child: const MenuAcceleratorLabel('&Help'),
         ),
       ],
     );

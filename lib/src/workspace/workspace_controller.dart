@@ -20,13 +20,16 @@ import 'file_io.dart';
 class WorkspaceController extends ChangeNotifier {
   WorkspaceController(this.docCtrl) {
     _restoreFuture = _restoreRecentFiles();
+    docCtrl.addListener(_onDocChanged);
   }
 
   final DocumentController docCtrl;
 
   static const _recentFilesKey = 'recentFiles';
+  static const _autosaveKey = 'autosave';
   static const _maxRecentFiles = 10;
   static const _watchDebounce = Duration(milliseconds: 300);
+  static const _autosaveDebounce = Duration(seconds: 2);
   static const _markdownTypeGroup = XTypeGroup(
     label: 'Markdown',
     extensions: <String>['md', 'markdown', 'txt'],
@@ -50,6 +53,32 @@ class WorkspaceController extends ChangeNotifier {
   /// Set when [save]/[saveAs]/[openPath] return false/throw; the app layer
   /// surfaces it.
   String? lastError;
+
+  bool _autosave = false;
+  Timer? _autosaveTimer;
+
+  /// Whether edits are written back to the file automatically (debounced).
+  bool get autosaveEnabled => _autosave;
+
+  Future<void> setAutosave(bool enabled) async {
+    if (_autosave == enabled) return;
+    _autosave = enabled;
+    notifyListeners();
+    try {
+      await _prefs.setBool(_autosaveKey, enabled);
+    } catch (_) {}
+    if (enabled) _scheduleAutosave();
+  }
+
+  void _onDocChanged() {
+    if (_autosave) _scheduleAutosave();
+  }
+
+  void _scheduleAutosave() {
+    _autosaveTimer?.cancel();
+    if (!_autosave || docCtrl.filePath == null || !docCtrl.dirty) return;
+    _autosaveTimer = Timer(_autosaveDebounce, () => unawaited(save()));
+  }
 
   /// Root folder shown in the sidebar, or null when no folder is open.
   String? get folder => _folder;
@@ -186,6 +215,73 @@ class WorkspaceController extends ChangeNotifier {
     return true;
   }
 
+  /// Reveals the active file in the system file manager (no-op if unsaved).
+  Future<void> revealActiveFile() async {
+    final path = docCtrl.filePath;
+    if (path == null || !supportsFileSystem) return;
+    await revealInFileManager(path);
+  }
+
+  /// Duplicates the active file on disk and opens the copy. Returns false if
+  /// there is no saved file.
+  Future<bool> duplicateActiveFile() async {
+    final path = docCtrl.filePath;
+    if (path == null || !supportsFileSystem) return false;
+    try {
+      final copy = await duplicateFile(path);
+      await openPath(copy);
+      return true;
+    } catch (e) {
+      lastError = 'Could not duplicate ${p.basename(path)}: $e';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Renames the active file to [newName] (basename, extension optional) in
+  /// its current folder, keeping it open.
+  Future<bool> renameActiveFile(String newName) async {
+    final path = docCtrl.filePath;
+    if (path == null || !supportsFileSystem || newName.trim().isEmpty) {
+      return false;
+    }
+    var name = newName.trim();
+    if (p.extension(name).isEmpty) name = '$name${p.extension(path)}';
+    final newPath = p.join(p.dirname(path), name);
+    try {
+      await renameFile(path, newPath);
+      docCtrl.filePath = newPath;
+      await _addRecentFile(newPath);
+      await _rebuildTree();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      lastError = 'Could not rename ${p.basename(path)}: $e';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Moves the active file to the trash and clears the editor to a new
+  /// untitled document. Returns false if there is no saved file.
+  Future<bool> trashActiveFile() async {
+    final path = docCtrl.filePath;
+    if (path == null || !supportsFileSystem) return false;
+    try {
+      await trashFile(path);
+      _recentFiles = _recentFiles.where((r) => r != path).toList();
+      await _persistRecent();
+      docCtrl.loadText('');
+      await _rebuildTree();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      lastError = 'Could not delete ${p.basename(path)}: $e';
+      notifyListeners();
+      return false;
+    }
+  }
+
   /// Shows a directory picker and opens the chosen folder in the sidebar.
   /// No-op on the web and when the user cancels.
   Future<void> openFolderDialog() async {
@@ -263,6 +359,10 @@ class WorkspaceController extends ChangeNotifier {
       ..._recentFiles.where((existing) => existing != path),
     ].take(_maxRecentFiles).toList();
     notifyListeners();
+    await _persistRecent();
+  }
+
+  Future<void> _persistRecent() async {
     try {
       await _prefs.setStringList(_recentFilesKey, _recentFiles);
     } catch (_) {
@@ -270,9 +370,19 @@ class WorkspaceController extends ChangeNotifier {
     }
   }
 
+  /// Restores the persisted autosave preference. Call once at startup.
+  Future<void> restoreSettings() async {
+    try {
+      _autosave = await _prefs.getBool(_autosaveKey) ?? false;
+      notifyListeners();
+    } catch (_) {}
+  }
+
   @override
   void dispose() {
     _disposed = true;
+    _autosaveTimer?.cancel();
+    docCtrl.removeListener(_onDocChanged);
     unawaited(_stopWatching());
     super.dispose();
   }

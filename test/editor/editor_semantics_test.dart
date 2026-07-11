@@ -690,6 +690,15 @@ void main() {
     });
   });
 
+  group('table of contents', () {
+    test('insertTableOfContents adds a [TOC] block', () {
+      doc.loadText('# Title');
+      editor.focusBlock(doc.doc.blocks.first.id);
+      editor.insertTableOfContents();
+      expect(doc.doc.blocks.any((b) => b.source == '[TOC]'), isTrue);
+    });
+  });
+
   group('insert image', () {
     test('inserts inline at the caret of a paragraph', () {
       doc.loadText('before  after');

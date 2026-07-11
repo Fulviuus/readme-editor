@@ -74,6 +74,7 @@ flutter:
   assets:
     - assets/themes/
     - assets/welcome.md
+    - assets/markdown-reference.md
     - assets/fonts/
 
   # An image asset can refer to one or more resolution-specific "variants", see

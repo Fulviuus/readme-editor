@@ -277,6 +277,70 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 
+  Future<void> _revealFile() async {
+    await _workspace.revealActiveFile();
+    _surfaceWorkspaceError();
+  }
+
+  Future<void> _duplicateFile() async {
+    if (!await _workspace.duplicateActiveFile()) _surfaceWorkspaceError();
+  }
+
+  Future<void> _renameFile() async {
+    if (_doc.filePath == null) return;
+    final ctrl = TextEditingController(text: p.basename(_doc.filePath!));
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Rename'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          onSubmitted: (v) => Navigator.of(context).pop(v),
+          decoration: const InputDecoration(labelText: 'New name'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(ctrl.text),
+            child: const Text('Rename'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (name != null && name.trim().isNotEmpty) {
+      if (!await _workspace.renameActiveFile(name)) _surfaceWorkspaceError();
+    }
+  }
+
+  Future<void> _deleteFile() async {
+    if (_doc.filePath == null) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Move "$_fileName" to Trash?'),
+        content: const Text('This moves the file to the system Trash.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Move to Trash'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      if (!await _workspace.trashActiveFile()) _surfaceWorkspaceError();
+    }
+  }
+
   /// File > Share…: native share sheet — the saved file when clean, the
   /// current markdown text otherwise.
   Future<void> _share() async {
@@ -438,6 +502,20 @@ class _HomeShellState extends State<HomeShell> {
     if (confirmed == true) _editor.insertTable(rows, cols);
   }
 
+  /// Help menu: loads a bundled markdown doc into the editor as an
+  /// untitled, non-dirty buffer (with confirm-if-dirty first).
+  Future<void> _openBundledDoc(String asset) async {
+    _editor.commitSourceMode?.call();
+    if (!await _confirmLoseChanges()) return;
+    _prepareForDocumentSwitch();
+    try {
+      final text = await rootBundle.loadString(asset);
+      _doc
+        ..loadText(text)
+        ..markSaved();
+    } catch (_) {}
+  }
+
   void _showAbout() {
     showAboutDialog(
       context: context,
@@ -470,6 +548,17 @@ class _HomeShellState extends State<HomeShell> {
         insertLocalImages: _insertLocalImages,
         activeSidebarPane: _sidebarPane,
         selectSidebarPane: _selectSidebarPane,
+        hasFilePath: _doc.filePath != null,
+        revealFile: _revealFile,
+        duplicateFile: _duplicateFile,
+        renameFile: _renameFile,
+        deleteFile: _deleteFile,
+        autosave: _workspace.autosaveEnabled,
+        toggleAutosave: () =>
+            _workspace.setAutosave(!_workspace.autosaveEnabled),
+        openMarkdownReference: () =>
+            _openBundledDoc('assets/markdown-reference.md'),
+        openQuickStart: () => _openBundledDoc('assets/welcome.md'),
       );
 
   /// Shell-level shortcuts for platforms without a native menu bar. The

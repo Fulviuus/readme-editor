@@ -22,3 +22,11 @@ Future<List<FileTreeNode>> listMarkdownTree(String dir) async =>
 
 /// No-op watch: never fires, cancel does nothing.
 WatchCancel watchFolder(String dir, void Function() onChange) => () async {};
+
+Future<void> revealInFileManager(String path) async {}
+Future<String> duplicateFile(String path) async =>
+    throw UnsupportedError('duplicateFile is not available on the web');
+Future<String> renameFile(String path, String newPath) async =>
+    throw UnsupportedError('renameFile is not available on the web');
+Future<void> trashFile(String path) async =>
+    throw UnsupportedError('trashFile is not available on the web');

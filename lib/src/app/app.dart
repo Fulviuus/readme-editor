@@ -35,7 +35,7 @@ class _ReadmeAppState extends State<ReadmeApp> {
     _docCtrl = DocumentController()..loadText('');
     _editor = EditorController(_docCtrl, widget.themeManager.current)
       ..imageBuilder = _buildImage;
-    _workspace = WorkspaceController(_docCtrl);
+    _workspace = WorkspaceController(_docCtrl)..restoreSettings();
     widget.themeManager.addListener(_onThemeChanged);
     _loadWelcome();
   }

@@ -68,3 +68,47 @@ WatchCancel watchFolder(String dir, void Function() onChange) {
       );
   return subscription.cancel;
 }
+
+/// Reveals [path] in the system file manager.
+Future<void> revealInFileManager(String path) async {
+  if (Platform.isMacOS) {
+    await Process.run('open', ['-R', path]);
+  } else if (Platform.isWindows) {
+    await Process.run('explorer', ['/select,', path]);
+  } else {
+    await Process.run('xdg-open', [p.dirname(path)]);
+  }
+}
+
+/// Copies [path] to a sibling `<name> copy.<ext>`, returning the new path.
+Future<String> duplicateFile(String path) async {
+  final dir = p.dirname(path);
+  final stem = p.basenameWithoutExtension(path);
+  final ext = p.extension(path);
+  var candidate = p.join(dir, '$stem copy$ext');
+  var n = 2;
+  while (await File(candidate).exists()) {
+    candidate = p.join(dir, '$stem copy $n$ext');
+    n++;
+  }
+  await File(path).copy(candidate);
+  return candidate;
+}
+
+/// Renames/moves [path] to [newPath]; returns the destination.
+Future<String> renameFile(String path, String newPath) async {
+  await File(path).rename(newPath);
+  return newPath;
+}
+
+/// Moves [path] to the trash where supported, else deletes it.
+Future<void> trashFile(String path) async {
+  if (Platform.isMacOS) {
+    final r = await Process.run('osascript', [
+      '-e',
+      'tell application "Finder" to delete POSIX file "$path"',
+    ]);
+    if (r.exitCode == 0) return;
+  }
+  await File(path).delete();
+}
