@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
+import '../document/block.dart';
 import '../editor/editor_controller.dart';
 import '../theme/theme_manager.dart';
 import '../workspace/workspace_controller.dart';
@@ -121,6 +122,14 @@ void dispatchTextIntent(Intent intent) {
 }
 
 void _dispatchTextIntent(Intent intent) => dispatchTextIntent(intent);
+
+/// PlatformMenuItem has no native checked state; a checkmark prefix (space-
+/// aligned when off) is the established stand-in across these menus.
+String _checked(String label, bool on) => on ? '✓ $label' : '   $label';
+
+/// Material-menu counterpart: a leading check icon (aligned when off).
+Widget _checkIcon(bool on) =>
+    on ? const Icon(Icons.check, size: 16) : const SizedBox(width: 16);
 
 // ---- macOS: PlatformMenuBar ----
 
@@ -638,13 +647,15 @@ List<PlatformMenu> buildPlatformMenus({
           members: [
             for (var n = 1; n <= 6; n++)
               PlatformMenuItem(
-                label: 'Heading $n',
+                label: _checked(
+                    'Heading $n', editor.focusedHeadingLevel == n),
                 shortcut:
                     SingleActivator(LogicalKeyboardKey(0x30 + n), meta: true),
                 onSelected: () => editor.setHeadingLevel(n),
               ),
             PlatformMenuItem(
-              label: 'Paragraph',
+              label: _checked(
+                  'Paragraph', editor.focusedKind == BlockKind.paragraph),
               shortcut:
                   const SingleActivator(LogicalKeyboardKey.digit0, meta: true),
               onSelected: () => editor.setHeadingLevel(0),
@@ -730,13 +741,17 @@ List<PlatformMenu> buildPlatformMenus({
               ],
             ),
             PlatformMenuItem(
-              label: 'Code Fences',
+              label: _checked(
+                  'Code Fences',
+                  editor.focusedKind == BlockKind.fencedCode ||
+                      editor.focusedKind == BlockKind.indentedCode),
               shortcut: const SingleActivator(LogicalKeyboardKey.keyC,
                   meta: true, alt: true),
               onSelected: editor.convertToCodeFence,
             ),
             PlatformMenuItem(
-              label: 'Math Block',
+              label: _checked(
+                  'Math Block', editor.focusedKind == BlockKind.mathBlock),
               shortcut: const SingleActivator(LogicalKeyboardKey.keyB,
                   meta: true, alt: true),
               onSelected: editor.convertToMathBlock,
@@ -759,7 +774,8 @@ List<PlatformMenu> buildPlatformMenus({
         PlatformMenuItemGroup(
           members: [
             PlatformMenuItem(
-              label: 'Quote',
+              label: _checked(
+                  'Quote', editor.focusedKind == BlockKind.blockquote),
               shortcut: const SingleActivator(LogicalKeyboardKey.keyQ,
                   meta: true, alt: true),
               onSelected: editor.convertToQuote,
@@ -789,19 +805,22 @@ List<PlatformMenu> buildPlatformMenus({
         PlatformMenuItemGroup(
           members: [
             PlatformMenuItem(
-              label: 'Ordered List',
+              label: _checked(
+                  'Ordered List', editor.focusedListStyle == 'ordered'),
               shortcut: const SingleActivator(LogicalKeyboardKey.keyO,
                   meta: true, alt: true),
               onSelected: editor.convertToOrderedList,
             ),
             PlatformMenuItem(
-              label: 'Unordered List',
+              label: _checked(
+                  'Unordered List', editor.focusedListStyle == 'unordered'),
               shortcut: const SingleActivator(LogicalKeyboardKey.keyU,
                   meta: true, alt: true),
               onSelected: editor.convertToUnorderedList,
             ),
             PlatformMenuItem(
-              label: 'Task List',
+              label:
+                  _checked('Task List', editor.focusedListStyle == 'task'),
               shortcut: const SingleActivator(LogicalKeyboardKey.keyX,
                   meta: true, alt: true),
               onSelected: editor.convertToTaskList,
@@ -881,7 +900,8 @@ List<PlatformMenu> buildPlatformMenus({
               onSelected: editor.insertHorizontalRule,
             ),
             PlatformMenuItem(
-              label: 'YAML Front Matter',
+              label: _checked('YAML Front Matter',
+                  editor.focusedKind == BlockKind.frontMatter),
               onSelected: editor.insertFrontMatter,
             ),
           ],
@@ -916,7 +936,8 @@ List<PlatformMenu> buildPlatformMenus({
         PlatformMenuItemGroup(
           members: [
             PlatformMenuItem(
-              label: 'Source Mode',
+              label:
+                  _checked('Source Mode', editor.sourceModeEnabled.value),
               shortcut:
                   const SingleActivator(LogicalKeyboardKey.slash, meta: true),
               onSelected: editor.toggleSourceMode,
@@ -1435,11 +1456,14 @@ class AppMenuBar extends StatelessWidget {
                 onPressed: () => editor.setHeadingLevel(n),
                 shortcut: SingleActivator(LogicalKeyboardKey(0x30 + n),
                     meta: meta, control: !meta),
+                leadingIcon: _checkIcon(editor.focusedHeadingLevel == n),
                 child: Text('Heading $n'),
               ),
             MenuItemButton(
               onPressed: () => editor.setHeadingLevel(0),
               shortcut: cmd(LogicalKeyboardKey.digit0),
+              leadingIcon:
+                  _checkIcon(editor.focusedKind == BlockKind.paragraph),
               child: const Text('Paragraph'),
             ),
             const Divider(height: 8),
@@ -1499,10 +1523,15 @@ class AppMenuBar extends StatelessWidget {
             ),
             MenuItemButton(
               onPressed: editor.convertToCodeFence,
+              leadingIcon: _checkIcon(
+                  editor.focusedKind == BlockKind.fencedCode ||
+                      editor.focusedKind == BlockKind.indentedCode),
               child: const Text('Code Fences'),
             ),
             MenuItemButton(
               onPressed: editor.convertToMathBlock,
+              leadingIcon:
+                  _checkIcon(editor.focusedKind == BlockKind.mathBlock),
               child: const Text('Math Block'),
             ),
             SubmenuButton(
@@ -1518,6 +1547,8 @@ class AppMenuBar extends StatelessWidget {
             ),
             MenuItemButton(
               onPressed: editor.convertToQuote,
+              leadingIcon:
+                  _checkIcon(editor.focusedKind == BlockKind.blockquote),
               child: const Text('Quote'),
             ),
             SubmenuButton(
@@ -1539,14 +1570,18 @@ class AppMenuBar extends StatelessWidget {
             const Divider(height: 8),
             MenuItemButton(
               onPressed: editor.convertToOrderedList,
+              leadingIcon: _checkIcon(editor.focusedListStyle == 'ordered'),
               child: const Text('Ordered List'),
             ),
             MenuItemButton(
               onPressed: editor.convertToUnorderedList,
+              leadingIcon:
+                  _checkIcon(editor.focusedListStyle == 'unordered'),
               child: const Text('Unordered List'),
             ),
             MenuItemButton(
               onPressed: editor.convertToTaskList,
+              leadingIcon: _checkIcon(editor.focusedListStyle == 'task'),
               child: const Text('Task List'),
             ),
             SubmenuButton(
@@ -1607,6 +1642,8 @@ class AppMenuBar extends StatelessWidget {
             ),
             MenuItemButton(
               onPressed: editor.insertFrontMatter,
+              leadingIcon:
+                  _checkIcon(editor.focusedKind == BlockKind.frontMatter),
               child: const Text('YAML Front Matter'),
             ),
           ],
@@ -1638,6 +1675,7 @@ class AppMenuBar extends StatelessWidget {
             MenuItemButton(
               onPressed: editor.toggleSourceMode,
               shortcut: cmd(LogicalKeyboardKey.slash),
+              leadingIcon: _checkIcon(editor.sourceModeEnabled.value),
               child: const Text('Source Mode'),
             ),
             MenuItemButton(

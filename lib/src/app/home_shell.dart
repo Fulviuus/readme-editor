@@ -20,6 +20,7 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../document/block.dart' show BlockKind;
 import '../document/document_controller.dart';
 import '../editor/editor_controller.dart';
 import '../editor/editor_view.dart';
@@ -79,6 +80,7 @@ class _HomeShellState extends State<HomeShell> {
     _themeManager = context.read<ThemeManager>();
     _tabs = DocTabs(_doc);
     _doc.addListener(_syncWindowTitle);
+    _editor.sourceModeEnabled.addListener(_onSourceModeChanged);
     _syncWindowTitle();
     _editor.linkOpener = (url) => _openLink(url);
     if (!kIsWeb) {
@@ -91,6 +93,7 @@ class _HomeShellState extends State<HomeShell> {
   void dispose() {
     _tabs.dispose();
     _editor.linkOpener = null;
+    _editor.sourceModeEnabled.removeListener(_onSourceModeChanged);
     _doc.removeListener(_syncWindowTitle);
     if (!kIsWeb) {
       setWindowCloseHandler(null);
@@ -105,14 +108,29 @@ class _HomeShellState extends State<HomeShell> {
 
   String? _menuLineEnding;
   bool? _menuFinalNewline;
+  BlockKind? _menuKind;
+  int _menuHeadingLevel = 0;
+  String? _menuListStyle;
+
+  /// The View > Source Mode checkmark reads the notifier at build time.
+  void _onSourceModeChanged() {
+    if (mounted) setState(() {});
+  }
 
   void _syncWindowTitle() {
-    // Menu checkmarks (Line Endings) read document state at build time;
-    // rebuild the shell when those specific facts change.
+    // Menu checkmarks (Line Endings, Paragraph block type) read document
+    // state at build time; rebuild the shell when those facts change —
+    // e.g. typing "# " converts the focused block without a focus change.
     if (_menuLineEnding != _doc.doc.lineEnding ||
-        _menuFinalNewline != _doc.doc.hadFinalNewline) {
+        _menuFinalNewline != _doc.doc.hadFinalNewline ||
+        _menuKind != _editor.focusedKind ||
+        _menuHeadingLevel != _editor.focusedHeadingLevel ||
+        _menuListStyle != _editor.focusedListStyle) {
       _menuLineEnding = _doc.doc.lineEnding;
       _menuFinalNewline = _doc.doc.hadFinalNewline;
+      _menuKind = _editor.focusedKind;
+      _menuHeadingLevel = _editor.focusedHeadingLevel;
+      _menuListStyle = _editor.focusedListStyle;
       if (mounted) setState(() {});
     }
     if (kIsWeb) return;

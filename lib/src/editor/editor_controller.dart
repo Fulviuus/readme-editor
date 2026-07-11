@@ -399,6 +399,27 @@ class EditorController extends ChangeNotifier {
     _scheduleSpellCheck();
   }
 
+  // ---- Menu state (checkmarks) ----
+
+  /// Block kind of the focused block, for Paragraph-menu checkmarks.
+  BlockKind? get focusedKind => focusedBlock?.kind;
+
+  /// Heading level of the focused block (0 when not a heading).
+  int get focusedHeadingLevel {
+    final b = focusedBlock;
+    return b != null && b.kind == BlockKind.heading ? b.headingLevel : 0;
+  }
+
+  /// 'ordered' | 'unordered' | 'task' for a focused list block, else null.
+  String? get focusedListStyle {
+    final b = focusedBlock;
+    if (b == null || b.kind != BlockKind.list) return null;
+    final m = _listItemLineRe.firstMatch(b.source.split('\n').first);
+    if (m == null) return null;
+    if (m.group(4) != null) return 'task';
+    return RegExp(r'^\d').hasMatch(m.group(2)!) ? 'ordered' : 'unordered';
+  }
+
   static final _lookUpWordChar = RegExp(r"[\p{L}\p{N}'’-]", unicode: true);
 
   /// The selected text, or the word around the caret, in the focused block.
