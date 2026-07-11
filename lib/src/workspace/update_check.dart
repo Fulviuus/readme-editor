@@ -5,7 +5,7 @@ library;
 export 'update_check_stub.dart' if (dart.library.io) 'update_check_io.dart';
 
 /// The running app's version (kept in sync with pubspec.yaml).
-const String appVersion = '1.0.0';
+const String appVersion = '1.0.1';
 
 sealed class UpdateResult {
   const UpdateResult();
