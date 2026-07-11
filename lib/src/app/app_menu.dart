@@ -29,6 +29,7 @@ class AppMenuCallbacks {
     required this.exportHtml,
     required this.exportPdf,
     required this.print,
+    required this.share,
     required this.toggleSidebar,
     required this.quit,
     required this.alwaysOnTop,
@@ -50,6 +51,7 @@ class AppMenuCallbacks {
   final VoidCallback exportHtml;
   final VoidCallback exportPdf;
   final VoidCallback print;
+  final VoidCallback share;
   final VoidCallback toggleSidebar;
   final VoidCallback quit;
   final bool alwaysOnTop;
@@ -198,6 +200,11 @@ List<PlatformMenu> buildPlatformMenus({
                   meta: true, shift: true),
               onSelected: actions.saveAs,
             ),
+          ],
+        ),
+        PlatformMenuItemGroup(
+          members: [
+            PlatformMenuItem(label: 'Share…', onSelected: actions.share),
           ],
         ),
         PlatformMenuItemGroup(
@@ -954,6 +961,10 @@ class AppMenuBar extends StatelessWidget {
               child: const Text('Save As…'),
             ),
             const Divider(height: 8),
+            MenuItemButton(
+              onPressed: actions.share,
+              child: const Text('Share…'),
+            ),
             SubmenuButton(
               menuChildren: [
                 MenuItemButton(

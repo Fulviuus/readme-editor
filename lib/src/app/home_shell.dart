@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../document/document_controller.dart';
@@ -276,6 +277,28 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 
+  /// File > Share…: native share sheet — the saved file when clean, the
+  /// current markdown text otherwise.
+  Future<void> _share() async {
+    _editor.commitSourceMode?.call();
+    final box = context.findRenderObject() as RenderBox?;
+    final origin = box == null
+        ? const Rect.fromLTWH(64, 32, 64, 32)
+        : box.localToGlobal(Offset.zero) & const Size(64, 32);
+    if (_doc.filePath != null && !_doc.dirty) {
+      await SharePlus.instance.share(ShareParams(
+        files: [XFile(_doc.filePath!)],
+        sharePositionOrigin: origin,
+      ));
+    } else {
+      await SharePlus.instance.share(ShareParams(
+        text: _doc.serialize(),
+        subject: _fileName,
+        sharePositionOrigin: origin,
+      ));
+    }
+  }
+
   /// Format > Image > Insert Image…: URL + alt-text dialog.
   Future<void> _insertImageDialog() async {
     final urlCtrl = TextEditingController();
@@ -437,6 +460,7 @@ class _HomeShellState extends State<HomeShell> {
         exportHtml: _exportHtml,
         exportPdf: _exportPdf,
         print: _print,
+        share: _share,
         toggleSidebar: _toggleSidebar,
         quit: _quit,
         alwaysOnTop: _alwaysOnTop,
