@@ -40,6 +40,7 @@ class AppMenuCallbacks {
     required this.activeSidebarPane,
     required this.selectSidebarPane,
     required this.hasFilePath,
+    required this.openQuickly,
     required this.revealFile,
     required this.duplicateFile,
     required this.renameFile,
@@ -71,6 +72,7 @@ class AppMenuCallbacks {
   final SidebarPane activeSidebarPane;
   final void Function(SidebarPane pane) selectSidebarPane;
   final bool hasFilePath;
+  final VoidCallback openQuickly;
   final VoidCallback revealFile;
   final VoidCallback duplicateFile;
   final VoidCallback renameFile;
@@ -164,6 +166,12 @@ List<PlatformMenu> buildPlatformMenus({
             ),
             PlatformMenuItem(
                 label: 'Open Folder…', onSelected: actions.openFolder),
+            PlatformMenuItem(
+              label: 'Open Quickly…',
+              shortcut: const SingleActivator(LogicalKeyboardKey.keyO,
+                  meta: true, shift: true),
+              onSelected: actions.openQuickly,
+            ),
             PlatformMenu(
               label: 'Open Recent',
               menus: [
@@ -985,6 +993,11 @@ class AppMenuBar extends StatelessWidget {
             MenuItemButton(
               onPressed: actions.openFolder,
               child: const Text('Open Folder…'),
+            ),
+            MenuItemButton(
+              onPressed: actions.openQuickly,
+              shortcut: cmd(LogicalKeyboardKey.keyO, shift: true),
+              child: const Text('Open Quickly…'),
             ),
             SubmenuButton(
               menuChildren: [

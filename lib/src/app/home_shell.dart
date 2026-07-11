@@ -25,6 +25,7 @@ import '../workspace/html_export.dart';
 import '../workspace/pdf_export.dart';
 import '../workspace/workspace_controller.dart';
 import 'app_menu.dart';
+import 'open_quickly.dart';
 import 'platform/window_support.dart';
 import 'sidebar/articles_pane.dart';
 import 'sidebar/file_tree.dart';
@@ -275,6 +276,15 @@ class _HomeShellState extends State<HomeShell> {
       _editor.theme,
       title: p.basenameWithoutExtension(_fileName),
     );
+  }
+
+  Future<void> _openQuickly() async {
+    final path = await showOpenQuickly(
+      context,
+      workspace: _workspace,
+      themeManager: _themeManager,
+    );
+    if (path != null) await _openPath(path);
   }
 
   Future<void> _revealFile() async {
@@ -549,6 +559,7 @@ class _HomeShellState extends State<HomeShell> {
         activeSidebarPane: _sidebarPane,
         selectSidebarPane: _selectSidebarPane,
         hasFilePath: _doc.filePath != null,
+        openQuickly: _openQuickly,
         revealFile: _revealFile,
         duplicateFile: _duplicateFile,
         renameFile: _renameFile,
@@ -573,6 +584,7 @@ class _HomeShellState extends State<HomeShell> {
     return {
       cmd(LogicalKeyboardKey.keyN): _newFile,
       cmd(LogicalKeyboardKey.keyO): _openFile,
+      cmd(LogicalKeyboardKey.keyO, shift: true): _openQuickly,
       cmd(LogicalKeyboardKey.keyS): _saveDocument,
       cmd(LogicalKeyboardKey.keyS, shift: true): _saveDocumentAs,
       cmd(LogicalKeyboardKey.keyF): () => _editor.findVisible.value = true,
