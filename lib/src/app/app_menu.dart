@@ -26,6 +26,7 @@ class AppMenuCallbacks {
     required this.openRecent,
     required this.save,
     required this.saveAs,
+    required this.paste,
     required this.importFile,
     required this.exportPandoc,
     required this.exportHtml,
@@ -62,6 +63,9 @@ class AppMenuCallbacks {
   final void Function(String path) openRecent;
   final VoidCallback save;
   final VoidCallback saveAs;
+
+  /// Paste with clipboard-image awareness (falls back to the text intent).
+  final VoidCallback paste;
   final VoidCallback importFile;
 
   /// Export through pandoc; the argument is the target file extension.
@@ -94,10 +98,13 @@ class AppMenuCallbacks {
 }
 
 /// Routes a text-editing intent to the currently focused editable field.
-void _dispatchTextIntent(Intent intent) {
+/// Public so the shell's clipboard-aware Paste can fall back to it.
+void dispatchTextIntent(Intent intent) {
   final context = FocusManager.instance.primaryFocus?.context;
   if (context != null) Actions.maybeInvoke(context, intent);
 }
+
+void _dispatchTextIntent(Intent intent) => dispatchTextIntent(intent);
 
 // ---- macOS: PlatformMenuBar ----
 
@@ -364,8 +371,7 @@ List<PlatformMenu> buildPlatformMenus({
               label: 'Paste',
               shortcut:
                   const SingleActivator(LogicalKeyboardKey.keyV, meta: true),
-              onSelected: () => _dispatchTextIntent(
-                  const PasteTextIntent(SelectionChangedCause.keyboard)),
+              onSelected: actions.paste,
             ),
             PlatformMenuItem(
               label: 'Select All',
@@ -1181,8 +1187,7 @@ class AppMenuBar extends StatelessWidget {
               child: const Text('Copy'),
             ),
             MenuItemButton(
-              onPressed: () => _dispatchTextIntent(
-                  const PasteTextIntent(SelectionChangedCause.keyboard)),
+              onPressed: actions.paste,
               child: const Text('Paste'),
             ),
             MenuItemButton(

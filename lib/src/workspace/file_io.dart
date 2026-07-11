@@ -9,6 +9,7 @@ library;
 export 'file_io_web.dart'
     if (dart.library.io) 'file_io_io.dart'
     show
+        copyIntoFolder,
         duplicateFile,
         listMarkdownTree,
         readTextFile,
@@ -17,6 +18,7 @@ export 'file_io_web.dart'
         supportsFileSystem,
         trashFile,
         watchFolder,
+        writeBinaryFile,
         writeTextFile;
 
 /// Cancels a [watchFolder] subscription.

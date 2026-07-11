@@ -14,12 +14,14 @@ class SettingsController extends ChangeNotifier {
   static const _kPreserveLineBreak = 'preserveSingleLineBreak';
   static const _kVisibleBr = 'visibleBr';
   static const _kSpellCheck = 'spellCheck';
+  static const _kCopyImagesToAssets = 'copyImagesToAssets';
 
   bool _smartQuotes = false;
   bool _smartDashes = false;
   bool _preserveSingleLineBreak = true;
   bool _visibleBr = false;
   bool _spellCheck = true;
+  bool _copyImagesToAssets = false;
 
   /// Convert straight quotes to curly while typing.
   bool get smartQuotes => _smartQuotes;
@@ -38,6 +40,10 @@ class SettingsController extends ChangeNotifier {
   /// native platforms only).
   bool get spellCheck => _spellCheck;
 
+  /// Copy inserted/dropped/pasted images into an `assets` folder next to
+  /// the document (when it has been saved) and link them relatively.
+  bool get copyImagesToAssets => _copyImagesToAssets;
+
   Future<void> load() async {
     try {
       _smartQuotes = await _prefs.getBool(_kSmartQuotes) ?? false;
@@ -46,6 +52,8 @@ class SettingsController extends ChangeNotifier {
           await _prefs.getBool(_kPreserveLineBreak) ?? true;
       _visibleBr = await _prefs.getBool(_kVisibleBr) ?? false;
       _spellCheck = await _prefs.getBool(_kSpellCheck) ?? true;
+      _copyImagesToAssets =
+          await _prefs.getBool(_kCopyImagesToAssets) ?? false;
       notifyListeners();
     } catch (_) {}
   }
@@ -68,4 +76,6 @@ class SettingsController extends ChangeNotifier {
       _set(_kVisibleBr, v, () => _visibleBr = v);
   Future<void> setSpellCheck(bool v) =>
       _set(_kSpellCheck, v, () => _spellCheck = v);
+  Future<void> setCopyImagesToAssets(bool v) =>
+      _set(_kCopyImagesToAssets, v, () => _copyImagesToAssets = v);
 }

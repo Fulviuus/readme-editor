@@ -10,8 +10,35 @@ class MainFlutterWindow: NSWindow {
 
     RegisterGeneratedPlugins(registry: flutterViewController)
     registerSpellChannel(flutterViewController)
+    registerClipboardChannel(flutterViewController)
 
     super.awakeFromNib()
+  }
+
+  /// Clipboard image access (Flutter's Clipboard API is text-only).
+  private func registerClipboardChannel(_ controller: FlutterViewController) {
+    let channel = FlutterMethodChannel(
+      name: "readme/clipboard",
+      binaryMessenger: controller.engine.binaryMessenger)
+    channel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "imagePng":
+        let pasteboard = NSPasteboard.general
+        if let png = pasteboard.data(forType: .png) {
+          result(FlutterStandardTypedData(bytes: png))
+          return
+        }
+        if let tiff = pasteboard.data(forType: .tiff),
+           let rep = NSBitmapImageRep(data: tiff),
+           let png = rep.representation(using: .png, properties: [:]) {
+          result(FlutterStandardTypedData(bytes: png))
+          return
+        }
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
   }
 
   /// System spell checker bridge. All range offsets are UTF-16 code units,

@@ -14,6 +14,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart'
+    show getTemporaryDirectory;
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -26,11 +28,14 @@ import '../editor/rendered_block.dart';
 import '../editor/source_view.dart';
 import '../theme/readme_theme.dart';
 import '../theme/theme_manager.dart';
+import '../workspace/file_io.dart' show copyIntoFolder, writeBinaryFile;
 import '../workspace/html_export.dart';
 import '../workspace/pandoc.dart';
 import '../workspace/pdf_export.dart';
 import '../workspace/workspace_controller.dart';
 import 'app_menu.dart';
+import 'platform/clipboard_image.dart';
+import 'settings_controller.dart';
 import 'open_quickly.dart';
 import 'platform/window_support.dart';
 import 'preferences_dialog.dart';
@@ -576,6 +581,25 @@ class _HomeShellState extends State<HomeShell> {
     altCtrl.dispose();
   }
 
+  /// Resolves where an inserted/dropped image should live and how to link
+  /// it: optionally copied into `<doc folder>/assets`, then made relative
+  /// to the document when possible.
+  Future<String> _storeImagePath(String srcPath) async {
+    final docDir = _doc.filePath == null ? null : p.dirname(_doc.filePath!);
+    var path = srcPath;
+    if (docDir != null && context.read<SettingsController>().copyImagesToAssets) {
+      try {
+        path = await copyIntoFolder(srcPath, p.join(docDir, 'assets'));
+      } catch (_) {
+        path = srcPath; // unreadable source/folder: link the original
+      }
+    }
+    if (docDir != null && p.isWithin(docDir, path)) {
+      path = p.relative(path, from: docDir);
+    }
+    return path;
+  }
+
   /// Format > Image > Insert Local Images…: file picker; paths are stored
   /// relative to the document's folder when possible.
   Future<void> _insertLocalImages() async {
@@ -584,15 +608,52 @@ class _HomeShellState extends State<HomeShell> {
     ]);
     final files = await openFiles(acceptedTypeGroups: const [group]);
     if (files.isEmpty) return;
-    final docDir =
-        _doc.filePath == null ? null : p.dirname(_doc.filePath!);
     for (final file in files) {
-      var path = file.path;
-      if (docDir != null && p.isWithin(docDir, path)) {
-        path = p.relative(path, from: docDir);
-      }
-      _editor.insertImage(path,
+      _editor.insertImage(await _storeImagePath(file.path),
           alt: p.basenameWithoutExtension(file.name));
+    }
+  }
+
+  /// Edit > Paste (also Cmd+V through the menu bar): when the clipboard has
+  /// no text but does hold an image, the image is written to disk (assets
+  /// folder or temp) and inserted as markdown; otherwise the normal text
+  /// paste runs.
+  Future<void> _paste() async {
+    const intent = PasteTextIntent(SelectionChangedCause.keyboard);
+    if (_editor.focusedBlockId == null) {
+      dispatchTextIntent(intent);
+      return;
+    }
+    final text = await Clipboard.getData('text/plain');
+    if ((text?.text ?? '').isNotEmpty) {
+      dispatchTextIntent(intent);
+      return;
+    }
+    final png = await readClipboardImagePng();
+    if (png == null) {
+      dispatchTextIntent(intent);
+      return;
+    }
+    try {
+      final docDir =
+          _doc.filePath == null ? null : p.dirname(_doc.filePath!);
+      final copyToAssets =
+          mounted && context.read<SettingsController>().copyImagesToAssets;
+      final name =
+          'pasted-image-${DateTime.now().millisecondsSinceEpoch}.png';
+      final String target;
+      if (docDir != null) {
+        target = p.join(docDir, copyToAssets ? 'assets' : '.', name);
+      } else {
+        target = p.join((await getTemporaryDirectory()).path, name);
+      }
+      await writeBinaryFile(target, png);
+      final link = docDir != null && p.isWithin(docDir, target)
+          ? p.relative(target, from: docDir)
+          : target;
+      _editor.insertImage(link, alt: '');
+    } catch (_) {
+      // No writable destination: nothing sensible to paste.
     }
   }
 
@@ -704,6 +765,7 @@ class _HomeShellState extends State<HomeShell> {
         openRecent: _openPath,
         save: _saveDocument,
         saveAs: _saveDocumentAs,
+        paste: _paste,
         importFile: _importFile,
         exportPandoc: _exportPandoc,
         exportHtml: _exportHtml,
@@ -759,12 +821,23 @@ class _HomeShellState extends State<HomeShell> {
 
   // ---- Drag & drop ----
 
+  static const _imageExtensions = {
+    '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg',
+  };
+
   Future<void> _onDropDone(DropDoneDetails details) async {
     for (final file in details.files) {
       final lower = file.path.toLowerCase();
       if (lower.endsWith('.md') || lower.endsWith('.markdown')) {
         await _openPath(file.path);
         return;
+      }
+    }
+    // No markdown in the drop: insert any images at the caret.
+    for (final file in details.files) {
+      if (_imageExtensions.contains(p.extension(file.path).toLowerCase())) {
+        _editor.insertImage(await _storeImagePath(file.path),
+            alt: p.basenameWithoutExtension(file.name));
       }
     }
   }

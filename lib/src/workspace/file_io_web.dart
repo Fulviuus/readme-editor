@@ -24,6 +24,10 @@ Future<List<FileTreeNode>> listMarkdownTree(String dir) async =>
 WatchCancel watchFolder(String dir, void Function() onChange) => () async {};
 
 Future<void> revealInFileManager(String path) async {}
+Future<String> copyIntoFolder(String srcPath, String folder) async =>
+    throw UnsupportedError('copyIntoFolder is not available on the web');
+Future<void> writeBinaryFile(String path, List<int> bytes) async =>
+    throw UnsupportedError('writeBinaryFile is not available on the web');
 Future<String> duplicateFile(String path) async =>
     throw UnsupportedError('duplicateFile is not available on the web');
 Future<String> renameFile(String path, String newPath) async =>

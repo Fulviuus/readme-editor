@@ -109,6 +109,13 @@ class _PreferencesDialog extends StatelessWidget {
                 settings.visibleBr,
                 (v) => settings.setVisibleBr(v),
               ),
+              toggle(
+                'Copy images next to the document',
+                'Inserted or pasted images go into an assets folder beside '
+                    'the file, linked relatively',
+                settings.copyImagesToAssets,
+                (v) => settings.setCopyImagesToAssets(v),
+              ),
               section('APPEARANCE'),
               ListTile(
                 dense: true,

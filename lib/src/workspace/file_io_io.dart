@@ -95,6 +95,30 @@ Future<String> duplicateFile(String path) async {
   return candidate;
 }
 
+/// Copies [srcPath] into [folder] (created if missing), deduplicating the
+/// name with ` 2`, ` 3`, … suffixes. Returns the destination path; if the
+/// source already lives in [folder], it is returned untouched.
+Future<String> copyIntoFolder(String srcPath, String folder) async {
+  if (p.equals(p.dirname(srcPath), folder)) return srcPath;
+  await Directory(folder).create(recursive: true);
+  final stem = p.basenameWithoutExtension(srcPath);
+  final ext = p.extension(srcPath);
+  var candidate = p.join(folder, '$stem$ext');
+  var n = 2;
+  while (await File(candidate).exists()) {
+    candidate = p.join(folder, '$stem $n$ext');
+    n++;
+  }
+  await File(srcPath).copy(candidate);
+  return candidate;
+}
+
+/// Writes [bytes] to [path], creating parent directories as needed.
+Future<void> writeBinaryFile(String path, List<int> bytes) async {
+  await Directory(p.dirname(path)).create(recursive: true);
+  await File(path).writeAsBytes(bytes, flush: true);
+}
+
 /// Renames/moves [path] to [newPath]; returns the destination.
 Future<String> renameFile(String path, String newPath) async {
   await File(path).rename(newPath);
