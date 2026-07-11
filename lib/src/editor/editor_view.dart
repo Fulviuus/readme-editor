@@ -92,7 +92,12 @@ class _EditorViewState extends State<EditorView> {
             return ScrollConfiguration(
               behavior: ScrollConfiguration.of(context)
                   .copyWith(scrollbars: true),
-              child: ListView.builder(
+              // Cross-block selection: rendered blocks register into this
+              // area, so a mouse drag selects across blocks and Cmd+C
+              // copies the rendered text. The focused block's TextField
+              // keeps its own selection; plain clicks still focus blocks.
+              child: SelectionArea(
+                child: ListView.builder(
                 controller: _scrollController,
                 // Typewriter mode pads by half a viewport so the first and
                 // last lines can still be centered.
@@ -125,6 +130,7 @@ class _EditorViewState extends State<EditorView> {
                     ),
                   );
                 },
+                ),
               ),
             );
           }),

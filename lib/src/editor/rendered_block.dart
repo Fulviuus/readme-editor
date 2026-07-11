@@ -449,6 +449,9 @@ class _TappableInlineTextState extends State<TappableInlineText> {
 
   @override
   Widget build(BuildContext context) {
+    // Register into an enclosing SelectionArea (cross-block selection);
+    // RichText, unlike Text, does not opt in by itself.
+    final registrar = SelectionContainer.maybeOf(context);
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTapUp: _onTapUp,
@@ -457,6 +460,11 @@ class _TappableInlineTextState extends State<TappableInlineText> {
         key: _textKey,
         text: widget.span,
         textAlign: widget.textAlign,
+        selectionRegistrar: registrar,
+        selectionColor: registrar == null
+            ? null
+            : DefaultSelectionStyle.of(context).selectionColor ??
+                Theme.of(context).textSelectionTheme.selectionColor,
       ),
     );
   }
