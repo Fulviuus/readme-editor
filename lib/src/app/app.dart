@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 
 import '../document/document_controller.dart';
 import '../editor/editor_controller.dart';
+import '../theme/material_theme.dart';
 import '../theme/theme_manager.dart';
 import '../workspace/workspace_controller.dart';
 import 'home_shell.dart';
@@ -83,6 +84,8 @@ class _ReadmeAppState extends State<ReadmeApp> {
 
   void _onThemeChanged() {
     _editor.theme = widget.themeManager.current;
+    // Material chrome (dialogs, buttons, menus) follows the editor theme.
+    if (mounted) setState(() {});
   }
 
   // ---- Image resolution for the inline renderer ----
@@ -155,6 +158,7 @@ class _ReadmeAppState extends State<ReadmeApp> {
       child: MaterialApp(
         title: 'readme',
         debugShowCheckedModeBanner: false,
+        theme: buildMaterialTheme(widget.themeManager.current),
         home: const HomeShell(),
       ),
     );
