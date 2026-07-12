@@ -134,7 +134,10 @@ class ListBlockView extends StatelessWidget {
     return Padding(
       padding: EdgeInsets.only(left: indentPx, top: 1, bottom: 1),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        // Markers sit on the first text line's baseline — top alignment
+        // leaves them floating high because of the text's leading.
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
         children: [
           // Marker column: right-aligned against a fixed gap so the marker
           // hugs its text and all items share one text column.
@@ -183,18 +186,17 @@ class _TaskCheckbox extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = editor.theme;
     final size = theme.fontSize * 0.85;
-    // Center the box on the first text line.
-    final lineHeight = theme.fontSize * (theme.bodyStyle.height ?? 1.5);
     return GestureDetector(
       onTap: () => editor.toggleTask(blockId, lineIndex),
       // Keep the box at its own size — the glyph slot's tight constraints
-      // would otherwise stretch it to the full slot width.
+      // would otherwise stretch it to the full slot width. The row aligns
+      // by baseline; a box without one hangs from the baseline like a
+      // glyph, which is exactly where a checkbox should sit.
       child: Align(
         alignment: Alignment.topLeft,
         heightFactor: 1,
         child: Padding(
-          padding: EdgeInsets.only(
-              top: ((lineHeight - size) / 2).clamp(0, lineHeight)),
+          padding: EdgeInsets.zero,
           child: Container(
             width: size,
             height: size,
