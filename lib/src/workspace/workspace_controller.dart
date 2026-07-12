@@ -28,6 +28,7 @@ class WorkspaceController extends ChangeNotifier {
 
   static const _recentFilesKey = 'recentFiles';
   static const _autosaveKey = 'autosave';
+  static const _folderKey = 'openFolder';
   static const _maxRecentFiles = 10;
   static const _watchDebounce = Duration(milliseconds: 300);
   static const _autosaveDebounce = Duration(seconds: 2);
@@ -295,7 +296,8 @@ class WorkspaceController extends ChangeNotifier {
   }
 
   /// Opens [dir] as the workspace folder: builds the tree and watches it,
-  /// rebuilding (debounced) whenever something under it changes.
+  /// rebuilding (debounced) whenever something under it changes. The
+  /// folder persists and is reopened on the next launch.
   Future<void> openFolder(String dir) async {
     final epoch = ++_folderEpoch;
     await _stopWatching();
@@ -308,6 +310,9 @@ class WorkspaceController extends ChangeNotifier {
       _cancelWatch = watchFolder(dir, _onFolderEvent);
     }
     notifyListeners();
+    try {
+      await _prefs.setString(_folderKey, dir);
+    } catch (_) {}
   }
 
   void _onFolderEvent() {
@@ -373,11 +378,21 @@ class WorkspaceController extends ChangeNotifier {
     }
   }
 
-  /// Restores the persisted autosave preference. Call once at startup.
+  /// Restores the persisted autosave preference and reopens the last
+  /// workspace folder. Call once at startup.
   Future<void> restoreSettings() async {
     try {
       _autosave = await _prefs.getBool(_autosaveKey) ?? false;
       notifyListeners();
+    } catch (_) {}
+    if (!supportsFileSystem) return;
+    try {
+      final dir = await _prefs.getString(_folderKey);
+      // Only restore when nothing was opened in the meantime; a vanished
+      // folder just yields an empty tree, which openFolder handles.
+      if (dir != null && _folder == null && !_disposed) {
+        await openFolder(dir);
+      }
     } catch (_) {}
   }
 

@@ -15,6 +15,8 @@ class SettingsController extends ChangeNotifier {
   static const _kVisibleBr = 'visibleBr';
   static const _kSpellCheck = 'spellCheck';
   static const _kCopyImagesToAssets = 'copyImagesToAssets';
+  static const _kSidebarVisible = 'sidebarVisible';
+  static const _kSidebarPane = 'sidebarPane';
 
   bool _smartQuotes = false;
   bool _smartDashes = false;
@@ -22,6 +24,8 @@ class SettingsController extends ChangeNotifier {
   bool _visibleBr = false;
   bool _spellCheck = true;
   bool _copyImagesToAssets = false;
+  bool _sidebarVisible = true;
+  String _sidebarPane = 'fileTree';
 
   /// Convert straight quotes to curly while typing.
   bool get smartQuotes => _smartQuotes;
@@ -44,6 +48,17 @@ class SettingsController extends ChangeNotifier {
   /// the document (when it has been saved) and link them relatively.
   bool get copyImagesToAssets => _copyImagesToAssets;
 
+  /// Sidebar state, restored on the next launch.
+  bool get sidebarVisible => _sidebarVisible;
+
+  /// Active sidebar pane, by [SidebarPane] enum name.
+  String get sidebarPane => _sidebarPane;
+
+  /// True once [load] has completed (with stored values or defaults) —
+  /// consumers restoring UI state wait for this.
+  bool get loaded => _loaded;
+  bool _loaded = false;
+
   Future<void> load() async {
     try {
       _smartQuotes = await _prefs.getBool(_kSmartQuotes) ?? false;
@@ -54,8 +69,13 @@ class SettingsController extends ChangeNotifier {
       _spellCheck = await _prefs.getBool(_kSpellCheck) ?? true;
       _copyImagesToAssets =
           await _prefs.getBool(_kCopyImagesToAssets) ?? false;
-      notifyListeners();
-    } catch (_) {}
+      _sidebarVisible = await _prefs.getBool(_kSidebarVisible) ?? true;
+      _sidebarPane = await _prefs.getString(_kSidebarPane) ?? 'fileTree';
+    } catch (_) {
+      // Unreadable prefs: keep the defaults.
+    }
+    _loaded = true;
+    notifyListeners();
   }
 
   Future<void> _set(String key, bool value, void Function() apply) async {
@@ -78,4 +98,14 @@ class SettingsController extends ChangeNotifier {
       _set(_kSpellCheck, v, () => _spellCheck = v);
   Future<void> setCopyImagesToAssets(bool v) =>
       _set(_kCopyImagesToAssets, v, () => _copyImagesToAssets = v);
+  Future<void> setSidebarVisible(bool v) =>
+      _set(_kSidebarVisible, v, () => _sidebarVisible = v);
+
+  Future<void> setSidebarPane(String name) async {
+    _sidebarPane = name;
+    notifyListeners();
+    try {
+      await _prefs.setString(_kSidebarPane, name);
+    } catch (_) {}
+  }
 }

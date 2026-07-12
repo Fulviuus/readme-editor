@@ -71,10 +71,19 @@ class _HomeShellState extends State<HomeShell> {
   late final ThemeManager _themeManager;
   late final DocTabs _tabs;
 
+  // Sidebar visibility and pane live on SettingsController so they persist
+  // across launches; these fields mirror it for synchronous reads and are
+  // synced from settings once the persisted values load.
   bool _sidebarVisible = true;
   bool _alwaysOnTop = false;
   SidebarPane _sidebarPane = SidebarPane.fileTree;
   String? _windowTitle;
+
+  /// True once the user has toggled the sidebar this session — the late-
+  /// arriving persisted values must not clobber an explicit choice.
+  bool _sidebarTouched = false;
+  bool _sidebarRestored = false;
+  late final SettingsController _settings;
 
   @override
   void initState() {
@@ -83,6 +92,9 @@ class _HomeShellState extends State<HomeShell> {
     _editor = context.read<EditorController>();
     _workspace = context.read<WorkspaceController>();
     _themeManager = context.read<ThemeManager>();
+    _settings = context.read<SettingsController>();
+    _settings.addListener(_restoreSidebarState);
+    _restoreSidebarState();
     _tabs = DocTabs(_doc);
     _doc.addListener(_syncWindowTitle);
     _editor.sourceModeEnabled.addListener(_onSourceModeChanged);
@@ -94,8 +106,33 @@ class _HomeShellState extends State<HomeShell> {
     }
   }
 
+  /// Applies the persisted sidebar state once the async prefs load lands.
+  void _restoreSidebarState() {
+    if (_sidebarRestored || !_settings.loaded) return;
+    _sidebarRestored = true;
+    if (_sidebarTouched) return;
+    final pane = SidebarPane.values
+        .where((p) => p.name == _settings.sidebarPane)
+        .firstOrNull;
+    setState(() {
+      _sidebarVisible = _settings.sidebarVisible;
+      if (pane != null) _sidebarPane = pane;
+    });
+  }
+
+  void _setSidebar({bool? visible, SidebarPane? pane}) {
+    _sidebarTouched = true;
+    setState(() {
+      if (visible != null) _sidebarVisible = visible;
+      if (pane != null) _sidebarPane = pane;
+    });
+    _settings.setSidebarVisible(_sidebarVisible);
+    _settings.setSidebarPane(_sidebarPane.name);
+  }
+
   @override
   void dispose() {
+    _settings.removeListener(_restoreSidebarState);
     _tabs.dispose();
     _editor.linkOpener = null;
     _editor.sourceModeEnabled.removeListener(_onSourceModeChanged);
@@ -858,7 +895,7 @@ class _HomeShellState extends State<HomeShell> {
     }
   }
 
-  void _toggleSidebar() => setState(() => _sidebarVisible = !_sidebarVisible);
+  void _toggleSidebar() => _setSidebar(visible: !_sidebarVisible);
 
   void _toggleAlwaysOnTop() {
     setState(() => _alwaysOnTop = !_alwaysOnTop);
@@ -1117,7 +1154,7 @@ class _HomeShellState extends State<HomeShell> {
                         label: pane.label,
                         selected: _sidebarPane == pane,
                         theme: theme,
-                        onTap: () => setState(() => _sidebarPane = pane),
+                        onTap: () => _setSidebar(pane: pane),
                       ),
                     ),
                 ],
@@ -1140,12 +1177,8 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   /// View-menu pane selection: switches the pane and reveals the sidebar.
-  void _selectSidebarPane(SidebarPane pane) {
-    setState(() {
-      _sidebarPane = pane;
-      _sidebarVisible = true;
-    });
-  }
+  void _selectSidebarPane(SidebarPane pane) =>
+      _setSidebar(visible: true, pane: pane);
 
   /// Opens [path] and focuses the first block containing [lineText].
   Future<void> _openSearchMatch(String path, String lineText) async {
