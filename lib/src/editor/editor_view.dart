@@ -4,6 +4,7 @@
 library;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart' show PointerScrollEvent;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -75,7 +76,16 @@ class _EditorViewState extends State<EditorView> {
       for (var i = 0; i < blocks.length; i++) blocks[i].id: i,
     };
 
-    return ColoredBox(
+    return Listener(
+      onPointerSignal: (event) {
+        if (event is! PointerScrollEvent ||
+            !editor.wheelZoom ||
+            !HardwareKeyboard.instance.isMetaPressed) {
+          return;
+        }
+        editor.onWheelZoom?.call(event.scrollDelta.dy < 0);
+      },
+      child: ColoredBox(
       color: theme.background,
       child: CallbackShortcuts(
         bindings: _bindings,
@@ -136,6 +146,7 @@ class _EditorViewState extends State<EditorView> {
             );
           }),
         ),
+      ),
       ),
     );
   }

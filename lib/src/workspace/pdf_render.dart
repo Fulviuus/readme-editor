@@ -383,6 +383,12 @@ class _PdfRenderer {
               text: (s.substring(n.contentStart, n.contentEnd)),
               style: style.copyWith(
                   font: mono, fontSize: size * theme.codeInlineFontScale)));
+        case SpanSyntaxNode():
+          out.add(pw.TextSpan(
+              text: (s.substring(n.contentStart, n.contentEnd)),
+              style: n.kind == 'mark'
+                  ? style
+                  : style.copyWith(fontSize: size * 0.75)));
       }
     }
   }

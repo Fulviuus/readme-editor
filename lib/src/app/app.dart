@@ -10,7 +10,12 @@ import 'package:provider/provider.dart';
 
 import '../document/document_controller.dart';
 import '../editor/editor_controller.dart';
-import '../editor/inline_tokenizer.dart' show inlineMathEnabled;
+import '../editor/inline_tokenizer.dart'
+    show
+        highlightSyntaxEnabled,
+        inlineMathEnabled,
+        subscriptSyntaxEnabled,
+        superscriptSyntaxEnabled;
 import '../theme/material_theme.dart';
 import '../theme/theme_manager.dart';
 import '../workspace/workspace_controller.dart';
@@ -27,7 +32,7 @@ class ReadmeApp extends StatefulWidget {
   State<ReadmeApp> createState() => _ReadmeAppState();
 }
 
-class _ReadmeAppState extends State<ReadmeApp> {
+class _ReadmeAppState extends State<ReadmeApp> with WidgetsBindingObserver {
   late final DocumentController _docCtrl;
   late final EditorController _editor;
   late final WorkspaceController _workspace;
@@ -44,11 +49,23 @@ class _ReadmeAppState extends State<ReadmeApp> {
     _settings.addListener(_onSettingsChanged);
     _settings.load();
     widget.themeManager.addListener(_onThemeChanged);
+    WidgetsBinding.instance.addObserver(this);
+    widget.themeManager.platformBrightness =
+        WidgetsBinding.instance.platformDispatcher.platformBrightness;
     _loadWelcome();
+  }
+
+  @override
+  void didChangePlatformBrightness() {
+    widget.themeManager.onPlatformBrightnessChanged(
+        WidgetsBinding.instance.platformDispatcher.platformBrightness);
   }
 
   void _onSettingsChanged() {
     inlineMathEnabled = _settings.inlineMath;
+    subscriptSyntaxEnabled = _settings.subscriptSyntax;
+    superscriptSyntaxEnabled = _settings.superscriptSyntax;
+    highlightSyntaxEnabled = _settings.highlightSyntax;
     _editor
       ..smartQuotes = _settings.smartQuotes
       ..smartDashes = _settings.smartDashes
@@ -56,8 +73,21 @@ class _ReadmeAppState extends State<ReadmeApp> {
       ..autoPairBrackets = _settings.autoPairBrackets
       ..autoPairMarkdown = _settings.autoPairMarkdown
       ..bulletMarker = _settings.bulletMarker
+      ..orderedDelimiter = _settings.orderedDelimiter
+      ..headingStyle = _settings.headingStyle
+      ..indentUnit = ' ' * (int.tryParse(_settings.indentSize) ?? 2)
+      ..prettyIndent = _settings.prettyIndent
+      ..emojiAutocomplete = _settings.emojiAutocomplete
+      ..codeDefaultLanguage = _settings.codeDefaultLanguage
+      ..typewriterCenterAlways = _settings.typewriterCenterAlways
       ..diagramsEnabled = _settings.diagrams
       ..codeLineNumbers = _settings.codeLineNumbers
+      ..autoWrapCode = _settings.autoWrapCode
+      ..wheelZoom = _settings.wheelZoom
+      ..onWheelZoom = ((zoomIn) => zoomIn
+          ? widget.themeManager.zoomIn()
+          : widget.themeManager.zoomOut())
+      ..displaySourceOnFocus = _settings.displaySourceOnFocus
       ..applyRenderSettings(
         preserveSingleLineBreak: _settings.preserveSingleLineBreak,
         visibleBr: _settings.visibleBr,
@@ -83,6 +113,7 @@ class _ReadmeAppState extends State<ReadmeApp> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _settings.removeListener(_onSettingsChanged);
     _settings.dispose();
     widget.themeManager.removeListener(_onThemeChanged);

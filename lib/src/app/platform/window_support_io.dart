@@ -53,6 +53,13 @@ Future<void> destroyWindow() async {
   await windowManager.destroy();
 }
 
+/// Hides the window without quitting (Preferences > General keeps the app
+/// alive when the window closes; Dock reopen brings it back).
+Future<void> hideWindow() async {
+  if (!_isDesktop) return;
+  await windowManager.hide();
+}
+
 class _CloseListener with WindowListener {
   _CloseListener(this.handler);
 

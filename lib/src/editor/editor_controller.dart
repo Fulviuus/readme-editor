@@ -15,6 +15,7 @@ import '../document/block_splitter.dart';
 import '../document/document_controller.dart';
 import '../theme/readme_theme.dart';
 import 'blocks/table_model.dart';
+import 'emoji.dart';
 import 'inline_renderer.dart';
 import 'inline_tokenizer.dart';
 import 'markdown_editing_controller.dart';
@@ -58,6 +59,14 @@ class EditorController extends ChangeNotifier {
 
   bool _preserveLineBreak = true;
   bool _visibleBr = false;
+  bool _showSimpleBlockSource = true;
+
+  /// Preferences > Editor > Live Rendering.
+  set displaySourceOnFocus(bool v) {
+    _showSimpleBlockSource = v;
+    _syncRendererFlags();
+    notifyListeners();
+  }
 
   /// Applies rendering preferences (Preferences window) to the renderer;
   /// survives renderer recreation on theme/image changes.
@@ -74,7 +83,8 @@ class EditorController extends ChangeNotifier {
   void _syncRendererFlags() {
     _renderer
       ..preserveSingleLineBreak = _preserveLineBreak
-      ..visibleBr = _visibleBr;
+      ..visibleBr = _visibleBr
+      ..showSimpleBlockSource = _showSimpleBlockSource;
   }
 
   set theme(ReadmeTheme t) {
@@ -128,11 +138,43 @@ class EditorController extends ChangeNotifier {
   /// Marker for new unordered lists ('-' | '*' | '+').
   String bulletMarker = '-';
 
+  /// Delimiter for new ordered lists ('.' | ')').
+  String orderedDelimiter = '.';
+
+  /// Heading style produced by conversions: 'atx' (#) or 'setext' for
+  /// levels 1–2.
+  String headingStyle = 'atx';
+
+  /// Spaces inserted per list indent level.
+  String indentUnit = '  ';
+
+  /// Indent nested list lines to the parent marker's width instead of the
+  /// fixed unit.
+  bool prettyIndent = false;
+
+  /// Convert `:shortcode:` to its emoji when the closing colon is typed.
+  bool emojiAutocomplete = true;
+
+  /// Language pre-filled on code fences created from the menu.
+  String codeDefaultLanguage = '';
+
+  /// Typewriter mode recenters on every caret move (true) or only when
+  /// the caret drifts far from the middle (false).
+  bool typewriterCenterAlways = true;
+
   /// Render diagram code fences as diagrams (off: plain code box).
   bool diagramsEnabled = true;
 
   /// Line-number gutter on rendered code blocks.
   bool codeLineNumbers = false;
+
+  /// Wrap long code lines (false: horizontal scroll).
+  bool autoWrapCode = true;
+
+  /// Cmd+scroll-wheel zooms (Preferences > Appearance). Wired by the
+  /// shell; the view only reports the gesture.
+  bool wheelZoom = false;
+  void Function(bool zoomIn)? onWheelZoom;
 
   /// Installed by the app shell: resolves and opens a link URL (http(s) in
   /// the browser, relative .md paths in the editor). The editor layer stays
@@ -464,6 +506,27 @@ class EditorController extends ChangeNotifier {
     if (word != null) SpellChecker.define(word);
   }
 
+  /// [start, end) of the caret's line in the focused block, else null.
+  ({int start, int end})? caretLineRange() {
+    if (_focusedBlockId == null) return null;
+    final sel = editing.selection;
+    if (!sel.isValid) return null;
+    final text = editing.text;
+    final caret = sel.baseOffset.clamp(0, text.length);
+    final start =
+        text.lastIndexOf('\n', caret - 1 < 0 ? 0 : caret - 1) + 1;
+    var end = text.indexOf('\n', caret);
+    if (end < 0) end = text.length;
+    return (start: start, end: end);
+  }
+
+  /// Deletes [start, end) plus a trailing newline if present (cut-line).
+  void removeLine(int start, int end) {
+    final text = editing.text;
+    final removeEnd = end < text.length && text[end] == '\n' ? end + 1 : end;
+    replaceRange(start, removeEnd, '', kind: EditKind.deleteFwd);
+  }
+
   CaretSnapshot? _snap(TextSelection sel) => _focusedBlockId == null
       ? null
       : CaretSnapshot(_focusedBlockId!, sel.baseOffset, sel.extentOffset);
@@ -508,6 +571,29 @@ class EditorController extends ChangeNotifier {
     String? committed;
     if (grew && v.selection.isCollapsed && v.selection.baseOffset > 0) {
       committed = v.text[v.selection.baseOffset - 1];
+    }
+    // Emoji autocomplete: the closing colon of `:shortcode:` converts it.
+    if (emojiAutocomplete &&
+        committed == ':' &&
+        v.text.length == old.text.length + 1 &&
+        v.selection.isCollapsed) {
+      final emojied = _applyEmoji(v);
+      if (emojied != null) {
+        final b = docCtrl.doc.blockById(id);
+        if (b != null) _setEditingValue(b, emojied);
+        _lastValue = emojied;
+        docCtrl.changeBlockSource(
+          id,
+          emojied.text,
+          kind: EditKind.typing,
+          caretBefore: CaretSnapshot(id, old.selection.baseOffset,
+              old.selection.extentOffset),
+          caretAfter: _snap(emojied.selection),
+        );
+        final updated = docCtrl.doc.blockById(id);
+        if (updated != null) editing.fallbackKind = updated.kind;
+        return;
+      }
     }
     // Auto pairing (single-character insertions with a collapsed caret).
     if ((autoPairBrackets || autoPairMarkdown) &&
@@ -575,6 +661,23 @@ class EditorController extends ChangeNotifier {
     BlockKind.html,
     BlockKind.frontMatter,
   };
+
+  static final _emojiCodeRe = RegExp(r':([a-zA-Z0-9_+\-]{1,40}):$');
+
+  /// `:tada:` just closed → 🎉. Never inside code-like blocks.
+  TextEditingValue? _applyEmoji(TextEditingValue v) {
+    final block = focusedBlock;
+    if (block == null || _codeLikeKinds.contains(block.kind)) return null;
+    final caret = v.selection.baseOffset;
+    final m = _emojiCodeRe.firstMatch(v.text.substring(0, caret));
+    if (m == null) return null;
+    final emoji = emojiShortcodes[m.group(1)!];
+    if (emoji == null) return null;
+    return TextEditingValue(
+      text: v.text.replaceRange(m.start, caret, emoji),
+      selection: TextSelection.collapsed(offset: m.start + emoji.length),
+    );
+  }
 
   static const _bracketPairs = {'(': ')', '[': ']', '{': '}'};
   static const _quotePairs = {'"': '"', "'": "'"};
@@ -1024,14 +1127,22 @@ class EditorController extends ChangeNotifier {
     if (block.kind == BlockKind.list) {
       final lineStart =
           text.lastIndexOf('\n', caret - 1 < 0 ? 0 : caret - 1) + 1;
+      final unit = _listIndentUnit(text, lineStart);
       if (shift) {
-        if (text.startsWith('  ', lineStart)) {
-          replaceRange(lineStart, lineStart + 2, '',
-              caretAt: (caret - 2).clamp(0, text.length), kind: EditKind.blockOp);
+        var leading = 0;
+        while (lineStart + leading < text.length &&
+            text[lineStart + leading] == ' ') {
+          leading++;
+        }
+        final remove = leading.clamp(0, unit.length);
+        if (remove > 0) {
+          replaceRange(lineStart, lineStart + remove, '',
+              caretAt: (caret - remove).clamp(0, text.length),
+              kind: EditKind.blockOp);
         }
       } else {
-        replaceRange(lineStart, lineStart, '  ',
-            caretAt: caret + 2, kind: EditKind.blockOp);
+        replaceRange(lineStart, lineStart, unit,
+            caretAt: caret + unit.length, kind: EditKind.blockOp);
       }
       return true;
     }
@@ -1039,6 +1150,20 @@ class EditorController extends ChangeNotifier {
       return _tableTab(text, caret, back: shift);
     }
     return false;
+  }
+
+  /// The indent step for a list line: the fixed unit, or (pretty
+  /// indentation) the previous item's marker width so nested content
+  /// aligns under its parent's text.
+  String _listIndentUnit(String text, int lineStart) {
+    if (!prettyIndent) return indentUnit;
+    if (lineStart <= 1) return indentUnit;
+    final prevStart =
+        text.lastIndexOf('\n', lineStart - 2 < 0 ? 0 : lineStart - 2) + 1;
+    final prev = text.substring(prevStart, lineStart - 1);
+    final m = _listItemLineRe.firstMatch(prev);
+    if (m == null) return indentUnit;
+    return ' ' * (m.group(2)!.length + m.group(3)!.length);
   }
 
   bool _tableTab(String text, int caret, {required bool back}) {
@@ -1628,6 +1753,17 @@ class EditorController extends ChangeNotifier {
     final currentLevel =
         block.kind == BlockKind.heading ? block.headingLevel : 0;
     final targetLevel = (n == 0 || n == currentLevel) ? 0 : n;
+    // Setext style for levels 1–2 (single-line content only).
+    if (headingStyle == 'setext' &&
+        (targetLevel == 1 || targetLevel == 2) &&
+        !stripped.contains('\n') &&
+        stripped.trim().isNotEmpty) {
+      final underline =
+          (targetLevel == 1 ? '=' : '-') * stripped.length.clamp(3, 40);
+      final newText = '$stripped\n$underline';
+      _convertTo(newText, caret.clamp(0, stripped.length));
+      return;
+    }
     final prefix = targetLevel == 0 ? '' : '${'#' * targetLevel} ';
     final newText = prefix + stripped;
     final delta = newText.length - text.length;
@@ -1957,8 +2093,9 @@ class EditorController extends ChangeNotifier {
       isAlready: (b) => b.kind == BlockKind.list && !b.isOrderedList &&
           !b.hasTaskItems);
 
-  void convertToOrderedList() => _convertToList((i) => '${i + 1}. ',
-      isAlready: (b) => b.kind == BlockKind.list && b.isOrderedList);
+  void convertToOrderedList() =>
+      _convertToList((i) => '${i + 1}$orderedDelimiter ',
+          isAlready: (b) => b.kind == BlockKind.list && b.isOrderedList);
 
   void convertToTaskList() => _convertToList((_) => '- [ ] ',
       isAlready: (b) => b.kind == BlockKind.list && b.hasTaskItems);
@@ -1972,8 +2109,9 @@ class EditorController extends ChangeNotifier {
       _convertTo(body, 0);
       return;
     }
-    final newSource = '```\n${editing.text}\n```';
-    _convertTo(newSource, 4); // caret at start of the body
+    final newSource = '```$codeDefaultLanguage\n${editing.text}\n```';
+    // Caret at start of the body.
+    _convertTo(newSource, 4 + codeDefaultLanguage.length);
   }
 
   /// Toggles the focused block to/from a math block.

@@ -17,6 +17,9 @@ void setWindowCloseHandler(Future<void> Function()? handler) {}
 /// Destroys the window, bypassing the close handler (no-op on web).
 Future<void> destroyWindow() async {}
 
+/// Hides the window (no-op on web).
+Future<void> hideWindow() async {}
+
 /// Pins the window above all others (no-op on web).
 Future<void> setWindowAlwaysOnTop(bool enabled) async {}
 

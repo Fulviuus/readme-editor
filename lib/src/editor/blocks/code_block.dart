@@ -31,6 +31,18 @@ class CodeBlockView extends StatelessWidget {
   final Block block;
   final EditorController editor;
 
+  Widget _codeText(TextSpan span, List<OffsetRun> runs, TextStyle mono,
+      {required bool wrap}) {
+    return TappableInlineText(
+      span: block.kind == BlockKind.indentedCode
+          ? TextSpan(text: block.source, style: mono)
+          : span,
+      runs: runs,
+      softWrap: wrap,
+      onCaret: (offset) => editor.focusBlock(block.id, offset: offset),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = editor.theme;
@@ -121,14 +133,12 @@ class CodeBlockView extends StatelessWidget {
                     ),
                   ),
                 Expanded(
-                  child: TappableInlineText(
-                    span: block.kind == BlockKind.indentedCode
-                        ? TextSpan(text: block.source, style: mono)
-                        : span,
-                    runs: runs,
-                    onCaret: (offset) =>
-                        editor.focusBlock(block.id, offset: offset),
-                  ),
+                  child: editor.autoWrapCode
+                      ? _codeText(span, runs, mono, wrap: true)
+                      : SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: _codeText(span, runs, mono, wrap: false),
+                        ),
                 ),
               ],
             ),

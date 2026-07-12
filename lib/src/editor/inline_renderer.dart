@@ -214,6 +214,22 @@ class InlineRenderer {
           }
         case CommentNode():
           rb.hidden(node.start, node.end);
+        case SpanSyntaxNode():
+          final st = active();
+          final styled = switch (node.kind) {
+            'sub' => st.copyWith(
+                fontFeatures: const [FontFeature.subscripts()],
+                fontSize: (st.fontSize ?? theme.fontSize) * 0.85),
+            'sup' => st.copyWith(
+                fontFeatures: const [FontFeature.superscripts()],
+                fontSize: (st.fontSize ?? theme.fontSize) * 0.85),
+            _ => st.copyWith(
+                backgroundColor: const Color(0xFFFFF3A3),
+                color: const Color(0xFF333333)),
+          };
+          rb.hidden(node.start, node.contentStart);
+          emitText(node.contentStart, node.contentEnd, styled);
+          rb.hidden(node.contentEnd, node.end);
         case MathNode():
           final st = active();
           spans.add(WidgetSpan(
@@ -249,10 +265,19 @@ class InlineRenderer {
         _ => theme.bodyStyle,
       };
 
+  /// Preferences > Editor > Live Rendering: when false, the block markers
+  /// of simple blocks (heading #, quote >) render invisibly while editing,
+  /// so the focused block still looks rendered. The characters keep their
+  /// width — the span must stay identical to the source.
+  bool showSimpleBlockSource = true;
+
   /// Builds the focused-block span: concatenated text == [source] exactly.
   TextSpan buildEditingSpan(String source, BlockKind kind,
       {int? headingLevel}) {
-    final marker = TextStyle(color: theme.syntaxMarkerColor);
+    final marker = TextStyle(
+        color: showSimpleBlockSource
+            ? theme.syntaxMarkerColor
+            : theme.syntaxMarkerColor.withValues(alpha: 0.0));
     switch (kind) {
       case BlockKind.fencedCode:
       case BlockKind.indentedCode:
@@ -368,6 +393,10 @@ class InlineRenderer {
           put(node.contentStart, node.contentEnd,
               style.copyWith(color: theme.accent));
           put(node.contentEnd, node.end, style.merge(marker));
+        case SpanSyntaxNode():
+          put(node.start, node.contentStart, style.merge(marker));
+          put(node.contentStart, node.contentEnd, style);
+          put(node.contentEnd, node.end, style.merge(marker));
       }
     }
     return spans;
@@ -403,6 +432,8 @@ class InlineRenderer {
         FootnoteRefNode() => FootnoteRefNode(n.start + d, n.end + d, n.id),
         MathNode() => MathNode(
             n.start + d, n.end + d, n.contentStart + d, n.contentEnd + d),
+        SpanSyntaxNode() => SpanSyntaxNode(n.start + d, n.end + d,
+            n.contentStart + d, n.contentEnd + d, n.kind),
       };
 
   TextSpan _buildHeadingSpan(String source, int level, TextStyle marker) {

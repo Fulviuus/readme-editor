@@ -27,6 +27,14 @@ class SettingsController extends ChangeNotifier {
   /// update exists.
   bool checkUpdatesAutomatically = false;
 
+  /// Drop behaviors ('open'/'none', 'open'/'insertLink', 'import'/'none').
+  String dropFolderAction = 'open';
+  String dropMarkdownAction = 'open';
+  String dropImportableAction = 'import';
+
+  /// Quit with the window (false: stay alive, Dock reopen restores it).
+  bool quitWhenClosed = true;
+
   // ---- Editor ----
   bool spellCheck = true;
   bool smartQuotes = false;
@@ -37,6 +45,28 @@ class SettingsController extends ChangeNotifier {
 
   /// Typing `*`, `_`, `~` or a backtick inserts the closing marker too.
   bool autoPairMarkdown = false;
+
+  /// Spaces per list indent level ('2' | '4').
+  String indentSize = '2';
+
+  /// Indent nested list lines to the parent marker's width.
+  bool prettyIndent = false;
+
+  /// `:shortcode:` converts to its emoji on the closing colon.
+  bool emojiAutocomplete = true;
+
+  /// Show block markers (heading #, quote >) while editing; off keeps
+  /// simple blocks looking rendered.
+  bool displaySourceOnFocus = true;
+
+  /// Cmd+C copies markdown source (false: rendered plain text).
+  bool copyMarkdownSource = true;
+
+  /// Copy/cut the caret's line when nothing is selected.
+  bool copyWholeLine = false;
+
+  /// Typewriter mode recenters on every caret move (false: only on drift).
+  bool typewriterCenterAlways = true;
 
   // ---- Image ----
   bool copyImagesToAssets = false;
@@ -60,6 +90,23 @@ class SettingsController extends ChangeNotifier {
   /// Line-number gutter on code blocks.
   bool codeLineNumbers = false;
 
+  /// Wrap long code lines (false: horizontal scroll).
+  bool autoWrapCode = true;
+
+  /// Language pre-filled on code fences created from the menu.
+  String codeDefaultLanguage = '';
+
+  /// Heading style produced by conversions ('atx' | 'setext').
+  String headingStyle = 'atx';
+
+  /// Ordered-list delimiter ('.' | ')').
+  String orderedDelimiter = '.';
+
+  /// `~x~` / `^x^` / `==x==` syntax support.
+  bool subscriptSyntax = false;
+  bool superscriptSyntax = false;
+  bool highlightSyntax = false;
+
   bool preserveSingleLineBreak = true;
   bool visibleBr = false;
 
@@ -69,6 +116,13 @@ class SettingsController extends ChangeNotifier {
 
   /// Reveal exported files in the file manager after a successful export.
   bool revealAfterExport = false;
+
+  // ---- Appearance ----
+  /// Cmd+scroll-wheel zooms the document.
+  bool wheelZoom = false;
+
+  /// Word count in the status bar (off collapses it to a click target).
+  bool showWordCount = true;
 
   // ---- Window/sidebar state (restored on launch) ----
   bool sidebarVisible = true;
@@ -87,6 +141,33 @@ class SettingsController extends ChangeNotifier {
       recordRecentFiles = await _prefs.getBool('recordRecentFiles') ?? true;
       checkUpdatesAutomatically =
           await _prefs.getBool('checkUpdatesAutomatically') ?? false;
+      dropFolderAction = await _prefs.getString('dropFolderAction') ?? 'open';
+      dropMarkdownAction =
+          await _prefs.getString('dropMarkdownAction') ?? 'open';
+      dropImportableAction =
+          await _prefs.getString('dropImportableAction') ?? 'import';
+      quitWhenClosed = await _prefs.getBool('quitWhenClosed') ?? true;
+      indentSize = await _prefs.getString('indentSize') ?? '2';
+      prettyIndent = await _prefs.getBool('prettyIndent') ?? false;
+      emojiAutocomplete = await _prefs.getBool('emojiAutocomplete') ?? true;
+      displaySourceOnFocus =
+          await _prefs.getBool('displaySourceOnFocus') ?? true;
+      copyMarkdownSource =
+          await _prefs.getBool('copyMarkdownSource') ?? true;
+      copyWholeLine = await _prefs.getBool('copyWholeLine') ?? false;
+      typewriterCenterAlways =
+          await _prefs.getBool('typewriterCenterAlways') ?? true;
+      autoWrapCode = await _prefs.getBool('autoWrapCode') ?? true;
+      codeDefaultLanguage =
+          await _prefs.getString('codeDefaultLanguage') ?? '';
+      headingStyle = await _prefs.getString('headingStyle') ?? 'atx';
+      orderedDelimiter = await _prefs.getString('orderedDelimiter') ?? '.';
+      subscriptSyntax = await _prefs.getBool('subscriptSyntax') ?? false;
+      superscriptSyntax =
+          await _prefs.getBool('superscriptSyntax') ?? false;
+      highlightSyntax = await _prefs.getBool('highlightSyntax') ?? false;
+      wheelZoom = await _prefs.getBool('wheelZoom') ?? false;
+      showWordCount = await _prefs.getBool('showWordCount') ?? true;
       spellCheck = await _prefs.getBool('spellCheck') ?? true;
       smartQuotes = await _prefs.getBool('smartQuotes') ?? false;
       smartDashes = await _prefs.getBool('smartDashes') ?? false;

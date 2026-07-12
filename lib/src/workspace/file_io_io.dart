@@ -129,6 +129,9 @@ List<int>? readBinaryFileSync(String path) {
   }
 }
 
+/// Whether [path] is a directory (drop handling).
+bool isDirectorySync(String path) => Directory(path).existsSync();
+
 /// Renames/moves [path] to [newPath]; returns the destination.
 Future<String> renameFile(String path, String newPath) async {
   await File(path).rename(newPath);

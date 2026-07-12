@@ -192,6 +192,27 @@ void main() {
       final m = tokenizeInline(r'$a\$b$').whereType<MathNode>().single;
       expect((m.contentStart, m.contentEnd), (1, 5));
     });
+
+    test('sub/sup/highlight tokenize only when enabled', () {
+      expect(tokenizeInline('H~2~O X^2^ ==hi==')
+          .whereType<SpanSyntaxNode>(), isEmpty);
+      subscriptSyntaxEnabled = true;
+      superscriptSyntaxEnabled = true;
+      highlightSyntaxEnabled = true;
+      addTearDown(() {
+        subscriptSyntaxEnabled = false;
+        superscriptSyntaxEnabled = false;
+        highlightSyntaxEnabled = false;
+      });
+      final nodes = tokenizeInline('H~2~O X^2^ ==hi==')
+          .whereType<SpanSyntaxNode>()
+          .toList();
+      expect(nodes.map((n) => n.kind), ['sub', 'sup', 'mark']);
+      expect(plainTextOfInline('H~2~O X^2^ ==hi=='), 'H2O X2 hi');
+      // Strikethrough (double tilde) is untouched.
+      expect(tokenizeInline('~~gone~~').whereType<EmphasisNode>(),
+          hasLength(1));
+    });
   });
 
   group('plainTextOfInline', () {

@@ -29,6 +29,7 @@ Future<String> copyIntoFolder(String srcPath, String folder) async =>
 Future<void> writeBinaryFile(String path, List<int> bytes) async =>
     throw UnsupportedError('writeBinaryFile is not available on the web');
 List<int>? readBinaryFileSync(String path) => null;
+bool isDirectorySync(String path) => false;
 Future<String> duplicateFile(String path) async =>
     throw UnsupportedError('duplicateFile is not available on the web');
 Future<String> renameFile(String path, String newPath) async =>

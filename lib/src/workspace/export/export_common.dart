@@ -88,6 +88,13 @@ List<InlineRun> flattenInline(
           out.add(InlineRun(
               (footnoteNumbers[n.id] ?? n.id).toString(),
               superscript: true));
+        case SpanSyntaxNode():
+          out.add(InlineRun(s.substring(n.contentStart, n.contentEnd),
+              bold: bold,
+              italic: italic,
+              strike: strike,
+              superscript: n.kind == 'sup',
+              linkUrl: link));
         case HtmlTagNode():
           final tag = s.substring(n.start, n.end);
           if (_brRe.hasMatch(tag)) {

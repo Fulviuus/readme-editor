@@ -34,6 +34,8 @@ class AppMenuCallbacks {
     required this.save,
     required this.saveAs,
     required this.paste,
+    required this.copy,
+    required this.cut,
     required this.importFile,
     required this.exportPandoc,
     required this.exportHtml,
@@ -83,6 +85,11 @@ class AppMenuCallbacks {
 
   /// Paste with clipboard-image awareness (falls back to the text intent).
   final VoidCallback paste;
+
+  /// Copy/Cut honoring the copy-behavior preferences (fall back to the
+  /// text intents outside the editor).
+  final VoidCallback copy;
+  final VoidCallback cut;
   final VoidCallback importFile;
 
   /// Export through pandoc; the argument is the target file extension.
@@ -399,15 +406,13 @@ List<PlatformMenu> buildPlatformMenus({
               label: 'Cut',
               shortcut:
                   const SingleActivator(LogicalKeyboardKey.keyX, meta: true),
-              onSelected: () => _dispatchTextIntent(
-                  CopySelectionTextIntent.cut(SelectionChangedCause.keyboard)),
+              onSelected: actions.cut,
             ),
             PlatformMenuItem(
               label: 'Copy',
               shortcut:
                   const SingleActivator(LogicalKeyboardKey.keyC, meta: true),
-              onSelected: () =>
-                  _dispatchTextIntent(CopySelectionTextIntent.copy),
+              onSelected: actions.copy,
             ),
             PlatformMenuItem(
               label: 'Paste',
@@ -1267,13 +1272,11 @@ class AppMenuBar extends StatelessWidget {
             // No shortcut property on these: the focused field already owns
             // Ctrl+X/C/V/A natively; the items exist for mouse access.
             MenuItemButton(
-              onPressed: () => _dispatchTextIntent(
-                  CopySelectionTextIntent.cut(SelectionChangedCause.keyboard)),
+              onPressed: actions.cut,
               child: const Text('Cut'),
             ),
             MenuItemButton(
-              onPressed: () =>
-                  _dispatchTextIntent(CopySelectionTextIntent.copy),
+              onPressed: actions.copy,
               child: const Text('Copy'),
             ),
             MenuItemButton(

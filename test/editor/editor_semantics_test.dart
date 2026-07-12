@@ -1052,4 +1052,40 @@ void main() {
       expect(doc.doc.blocks.first.source, '(hello');
     });
   });
+
+  group('emoji autocomplete', () {
+    test('the closing colon converts a known shortcode', () {
+      doc.loadText('ship it ');
+      editor.focusBlock(doc.doc.blocks.first.id, offset: 8);
+      type('ship it :tada', 13);
+      type('ship it :tada:', 14);
+      expect(doc.doc.blocks.first.source, 'ship it 🎉');
+    });
+
+    test('unknown shortcodes and disabled setting stay literal', () {
+      doc.loadText('a ');
+      editor.focusBlock(doc.doc.blocks.first.id, offset: 2);
+      type('a :notacode:', 12);
+      expect(doc.doc.blocks.first.source, 'a :notacode:');
+
+      editor.emojiAutocomplete = false;
+      doc.loadText('b ');
+      editor.focusBlock(doc.doc.blocks.first.id, offset: 2);
+      type('b :tada:', 8);
+      expect(doc.doc.blocks.first.source, 'b :tada:');
+    });
+  });
+
+  group('indent size', () {
+    test('Tab indents lists by the configured unit', () {
+      doc.loadText('- one\n- two');
+      editor.indentUnit = '    ';
+      final id = doc.doc.blocks.first.id;
+      editor.focusBlock(id, offset: 11); // end of "- two"
+      editor.handleTab();
+      expect(doc.doc.blocks.first.source, '- one\n    - two');
+      editor.handleTab(shift: true);
+      expect(doc.doc.blocks.first.source, '- one\n- two');
+    });
+  });
 }

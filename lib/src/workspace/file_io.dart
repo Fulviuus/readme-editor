@@ -11,6 +11,7 @@ export 'file_io_web.dart'
     show
         copyIntoFolder,
         duplicateFile,
+        isDirectorySync,
         listMarkdownTree,
         readBinaryFileSync,
         readTextFile,

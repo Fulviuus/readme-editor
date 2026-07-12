@@ -55,7 +55,12 @@ class _EditingBlockState extends State<EditingBlock> {
       final target = (blockTop + caretDy + lineHalf -
               position.viewportDimension / 2)
           .clamp(position.minScrollExtent, position.maxScrollExtent);
-      if ((target - position.pixels).abs() < 2) return;
+      // Relaxed centering: only recenter once the caret drifts well away
+      // from the middle (Preferences > Editor > Typewriter Mode).
+      final threshold = widget.editor.typewriterCenterAlways
+          ? 2.0
+          : position.viewportDimension * 0.25;
+      if ((target - position.pixels).abs() < threshold) return;
       position.animateTo(target,
           duration: const Duration(milliseconds: 80), curve: Curves.easeOut);
     });

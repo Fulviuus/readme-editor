@@ -108,6 +108,17 @@ class MathNode extends InlineNode {
   final int contentStart, contentEnd;
 }
 
+/// `~sub~`, `^sup^` or `==highlight==`: one-character (or two-`=`) fences
+/// around content with no spaces just inside.
+class SpanSyntaxNode extends InlineNode {
+  SpanSyntaxNode(super.start, super.end, this.contentStart, this.contentEnd,
+      this.kind);
+  final int contentStart, contentEnd;
+
+  /// 'sub' | 'sup' | 'mark'
+  final String kind;
+}
+
 /// Normalizes a link-reference label the way CommonMark does.
 String normalizeReference(String label) =>
     label.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
@@ -129,6 +140,12 @@ bool _isAlnum(String c) => RegExp(r'[a-zA-Z0-9]').hasMatch(c);
 /// Process-wide because tokenization is a pure function used by every
 /// layer (renderer, exporters, word count) that must all agree.
 bool inlineMathEnabled = true;
+
+/// `~x~` subscript, `^x^` superscript, `==x==` highlight
+/// (Preferences > Markdown > Syntax Support; all default off).
+bool subscriptSyntaxEnabled = false;
+bool superscriptSyntaxEnabled = false;
+bool highlightSyntaxEnabled = false;
 
 List<InlineNode> tokenizeInline(String s) => _parse(s, 0, s.length);
 
@@ -163,6 +180,8 @@ String plainTextOfInline(String s) {
         case FootnoteRefNode():
           break;
         case MathNode():
+          buf.write(s.substring(n.contentStart, n.contentEnd));
+        case SpanSyntaxNode():
           buf.write(s.substring(n.contentStart, n.contentEnd));
       }
     }
@@ -284,6 +303,39 @@ List<InlineNode> _parse(String s, int from, int to) {
       continue;
     }
 
+    // ~subscript~ / ^superscript^ (single-char fences; a `~~` run stays
+    // strikethrough below).
+    if ((c == '~' && subscriptSyntaxEnabled && runLen(i, '~') == 1) ||
+        (c == '^' && superscriptSyntaxEnabled)) {
+      final close = _findSpanClose(s, c, i + 1, to);
+      if (close >= 0) {
+        flushText(i);
+        nodes.add(SpanSyntaxNode(
+            i, close + 1, i + 1, close, c == '~' ? 'sub' : 'sup'));
+        i = close + 1;
+        textStart = i;
+        continue;
+      }
+      if (c == '^') {
+        i++;
+        continue;
+      }
+    }
+
+    // ==highlight==
+    if (c == '=' && highlightSyntaxEnabled && runLen(i, '=') == 2) {
+      final close = _findHighlightClose(s, i + 2, to);
+      if (close >= 0) {
+        flushText(i);
+        nodes.add(SpanSyntaxNode(i, close + 2, i + 2, close, 'mark'));
+        i = close + 2;
+        textStart = i;
+        continue;
+      }
+      i += 2;
+      continue;
+    }
+
     // Emphasis / strong / strikethrough.
     if (c == '*' || c == '_' || c == '~') {
       final l = runLen(i, c);
@@ -372,6 +424,31 @@ List<InlineNode> _parse(String s, int from, int to) {
 }
 
 final _digit = RegExp(r'\d');
+
+/// Closing single-char fence for ~sub~ / ^sup^: non-empty single-line
+/// content with no space just inside either end.
+int _findSpanClose(String s, String fence, int from, int to) {
+  if (from >= to || s[from] == ' ' || s[from] == fence) return -1;
+  if (to - from > _scanWindow) to = from + _scanWindow;
+  for (var j = from; j < to; j++) {
+    final c = s[j];
+    if (c == '\n') return -1;
+    if (c == fence) return s[j - 1] == ' ' ? -1 : j;
+  }
+  return -1;
+}
+
+/// Closing `==` for a highlight span, same content rules.
+int _findHighlightClose(String s, int from, int to) {
+  if (from >= to || s[from] == ' ' || s[from] == '=') return -1;
+  if (to - from > _scanWindow) to = from + _scanWindow;
+  for (var j = from; j + 1 < to; j++) {
+    final c = s[j];
+    if (c == '\n') return -1;
+    if (c == '=' && s[j + 1] == '=') return s[j - 1] == ' ' ? -1 : j;
+  }
+  return -1;
+}
 
 /// Finds the closing `$` of an inline math span whose opener sits just
 /// before [from]. Content must be non-empty and single-line, with no space

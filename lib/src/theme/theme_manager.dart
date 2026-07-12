@@ -64,9 +64,36 @@ class ThemeManager extends ChangeNotifier {
   /// UI zoom factor (View > Zoom In/Out), persisted; 1.0 = actual size.
   double get zoom => _zoom;
 
+  /// Theme id used while the system is in dark mode ('' = same theme).
+  String _darkThemeId = '';
+  String get darkThemeId => _darkThemeId;
+
+  /// System brightness, pushed in by the app widget.
+  Brightness platformBrightness = Brightness.light;
+
+  Future<void> setDarkTheme(String id) async {
+    _darkThemeId = id;
+    notifyListeners();
+    try {
+      await _prefs.setString('darkTheme', id);
+    } catch (_) {}
+  }
+
+  /// Called by the app when the system appearance flips.
+  void onPlatformBrightnessChanged(Brightness b) {
+    if (b == platformBrightness) return;
+    platformBrightness = b;
+    if (_darkThemeId.isNotEmpty) notifyListeners();
+  }
+
   ReadmeTheme get current {
+    final effectiveId = platformBrightness == Brightness.dark &&
+            _darkThemeId.isNotEmpty &&
+            _themeById(_darkThemeId) != null
+        ? _darkThemeId
+        : _currentId;
     final theme =
-        _themeById(_currentId) ?? _themeById(_defaultId) ?? themes.first;
+        _themeById(effectiveId) ?? _themeById(_defaultId) ?? themes.first;
     return _zoom == 1.0 ? theme : theme.scaled(_zoom);
   }
 
@@ -96,6 +123,7 @@ class ThemeManager extends ChangeNotifier {
     if (savedZoom != null) {
       _zoom = savedZoom.clamp(_zoomMin, _zoomMax);
     }
+    _darkThemeId = await _prefs.getString('darkTheme') ?? '';
     notifyListeners();
   }
 

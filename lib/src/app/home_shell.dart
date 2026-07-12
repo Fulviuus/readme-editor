@@ -25,6 +25,7 @@ import '../document/block.dart' show BlockKind;
 import '../document/document_controller.dart';
 import '../editor/editor_controller.dart';
 import '../editor/editor_view.dart';
+import '../editor/inline_tokenizer.dart' show plainTextOfInline;
 import '../editor/find_bar.dart';
 import '../editor/rendered_block.dart';
 import '../editor/source_view.dart';
@@ -38,6 +39,7 @@ import '../workspace/file_history.dart';
 import '../workspace/file_io.dart'
     show
         copyIntoFolder,
+        isDirectorySync,
         readBinaryFileSync,
         revealInFileManager,
         writeBinaryFile,
@@ -222,7 +224,13 @@ class _HomeShellState extends State<HomeShell> {
   Future<void> _handleWindowClose() async {
     _editor.commitSourceMode?.call();
     if (await _confirmCloseAllTabs()) {
-      await destroyWindow();
+      // Preferences > General: keep the app alive (Dock reopen brings the
+      // window back) or quit with the window.
+      if (_settings.quitWhenClosed) {
+        await destroyWindow();
+      } else {
+        await hideWindow();
+      }
     }
   }
 
@@ -505,10 +513,21 @@ class _HomeShellState extends State<HomeShell> {
         'docx', 'odt', 'epub', 'html', 'htm', 'rtf', 'tex', 'rst', 'textile',
       ]),
     ]);
-    if (file == null || !await _confirmLoseChanges()) return;
+    if (file == null) return;
+    await _importPath(file.path);
+  }
+
+  /// Converts [path] to markdown via pandoc and opens it untitled.
+  Future<void> _importPath(String path) async {
+    final pandoc = await findPandoc(override: _settings.pandocPath);
+    if (pandoc == null) {
+      _showPandocMissing();
+      return;
+    }
+    if (!await _confirmLoseChanges()) return;
     _prepareForDocumentSwitch();
     try {
-      final markdown = await pandocImport(pandoc, file.path);
+      final markdown = await pandocImport(pandoc, path);
       await _workspace.newFile();
       _doc.loadText(markdown);
     } on PandocException catch (e) {
@@ -899,6 +918,37 @@ class _HomeShellState extends State<HomeShell> {
     }
   }
 
+  /// Edit > Copy / Cut honoring the copy-behavior preferences: markdown
+  /// source vs rendered text, and whole-line copy/cut with no selection.
+  Future<void> _copyOrCut({required bool cut}) async {
+    final defaultIntent = cut
+        ? CopySelectionTextIntent.cut(SelectionChangedCause.keyboard)
+        : CopySelectionTextIntent.copy;
+    final sel = _editor.editing.selection;
+    if (_editor.focusedBlockId == null || !sel.isValid) {
+      dispatchTextIntent(defaultIntent);
+      return;
+    }
+    final text = _editor.editing.text;
+    String? payload;
+    if (!sel.isCollapsed) {
+      payload = text.substring(sel.start, sel.end);
+      if (!_settings.copyMarkdownSource) payload = plainTextOfInline(payload);
+      if (cut) _editor.replaceRange(sel.start, sel.end, '');
+    } else if (_settings.copyWholeLine) {
+      final line = _editor.caretLineRange();
+      if (line == null) return;
+      payload = text.substring(line.start, line.end);
+      if (!_settings.copyMarkdownSource) payload = plainTextOfInline(payload);
+      if (cut) _editor.removeLine(line.start, line.end);
+    }
+    if (payload == null) {
+      dispatchTextIntent(defaultIntent);
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: payload));
+  }
+
   /// Edit > Paste (also Cmd+V through the menu bar): when the clipboard has
   /// no text but does hold an image, the image is written to disk (assets
   /// folder or temp) and inserted as markdown; otherwise the normal text
@@ -1055,6 +1105,8 @@ class _HomeShellState extends State<HomeShell> {
         revertTo: _revertTo,
         checkForUpdates: _checkForUpdates,
         paste: _paste,
+        copy: () => _copyOrCut(cut: false),
+        cut: () => _copyOrCut(cut: true),
         importFile: _importFile,
         exportPandoc: _exportDoc,
         exportHtml: _exportHtml,
@@ -1113,16 +1165,51 @@ class _HomeShellState extends State<HomeShell> {
   static const _imageExtensions = {
     '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg',
   };
+  static const _importableExtensions = {
+    '.docx', '.odt', '.epub', '.html', '.htm', '.rtf',
+  };
 
+  /// Drop behavior follows Preferences > Files: folders open in the
+  /// sidebar, markdown opens (or links), importable formats import.
   Future<void> _onDropDone(DropDoneDetails details) async {
     for (final file in details.files) {
-      final lower = file.path.toLowerCase();
-      if (lower.endsWith('.md') || lower.endsWith('.markdown')) {
-        await _openPath(file.path);
+      if (isDirectorySync(file.path)) {
+        if (_settings.dropFolderAction == 'open') {
+          await _workspace.openFolder(file.path);
+        }
         return;
       }
     }
-    // No markdown in the drop: insert any images at the caret.
+    for (final file in details.files) {
+      final lower = file.path.toLowerCase();
+      if (lower.endsWith('.md') || lower.endsWith('.markdown')) {
+        if (_settings.dropMarkdownAction == 'open') {
+          await _openPath(file.path);
+          return;
+        }
+        // 'insertLink': a markdown link at the caret instead.
+        final docDir =
+            _doc.filePath == null ? null : p.dirname(_doc.filePath!);
+        final link = docDir != null && p.isWithin(docDir, file.path)
+            ? p.relative(file.path, from: docDir)
+            : file.path;
+        final sel = _editor.editing.selection;
+        final at = sel.isValid ? sel.baseOffset : 0;
+        _editor.replaceRange(
+            at, at, '[${p.basenameWithoutExtension(file.name)}]($link)');
+        return;
+      }
+    }
+    for (final file in details.files) {
+      if (_importableExtensions
+          .contains(p.extension(file.path).toLowerCase())) {
+        if (_settings.dropImportableAction == 'import') {
+          await _importPath(file.path);
+        }
+        return;
+      }
+    }
+    // Anything else: insert images at the caret.
     for (final file in details.files) {
       if (_imageExtensions.contains(p.extension(file.path).toLowerCase())) {
         _editor.insertImage(await _storeImagePath(file.path),

@@ -372,6 +372,7 @@ class TappableInlineText extends StatefulWidget {
     this.links = const [],
     this.onOpenLink,
     this.textAlign = TextAlign.start,
+    this.softWrap = true,
   });
 
   final InlineSpan span;
@@ -380,6 +381,7 @@ class TappableInlineText extends StatefulWidget {
   final List<LinkRange> links;
   final ValueChanged<String>? onOpenLink;
   final TextAlign textAlign;
+  final bool softWrap;
 
   @override
   State<TappableInlineText> createState() => _TappableInlineTextState();
@@ -461,6 +463,8 @@ class _TappableInlineTextState extends State<TappableInlineText> {
         key: _textKey,
         text: widget.span,
         textAlign: widget.textAlign,
+        softWrap: widget.softWrap,
+        overflow: widget.softWrap ? TextOverflow.clip : TextOverflow.visible,
         selectionRegistrar: registrar,
         selectionColor: registrar == null
             ? null

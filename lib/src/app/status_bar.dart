@@ -11,6 +11,7 @@ import '../document/document_controller.dart';
 import '../editor/editor_controller.dart';
 import '../theme/theme_manager.dart';
 import '../util/word_count.dart';
+import 'settings_controller.dart';
 
 class StatusBar extends StatelessWidget {
   const StatusBar({super.key});
@@ -74,7 +75,10 @@ class StatusBar extends StatelessWidget {
                       ? controller.close()
                       : controller.open(),
                   child: Text(
-                    '${count.words} words · ${count.characters} characters',
+                    context.watch<SettingsController>().showWordCount
+                        ? '${count.words} words · '
+                            '${count.characters} characters'
+                        : '⋯',
                     style: style,
                   ),
                 ),
