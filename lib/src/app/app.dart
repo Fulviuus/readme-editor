@@ -4,8 +4,10 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../document/document_controller.dart';
 import '../editor/editor_controller.dart';
@@ -51,6 +53,7 @@ class _ReadmeAppState extends State<ReadmeApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     widget.themeManager.platformBrightness =
         WidgetsBinding.instance.platformDispatcher.platformBrightness;
+    _maybeLoadWelcome();
   }
 
   @override
@@ -94,6 +97,24 @@ class _ReadmeAppState extends State<ReadmeApp> with WidgetsBindingObserver {
     _workspace
       ..recordRecentFiles = _settings.recordRecentFiles
       ..defaultExtension = _settings.defaultExtension;
+  }
+
+  /// The welcome tour opens exactly once — the very first launch ever.
+  /// Every launch after that follows the on-launch preference (blank
+  /// document, or reopen-last). The tour stays under Help > Quick Start.
+  Future<void> _maybeLoadWelcome() async {
+    try {
+      final prefs = SharedPreferencesAsync();
+      if (await prefs.getBool('welcomeShown') ?? false) return;
+      await prefs.setBool('welcomeShown', true);
+      final text = await rootBundle.loadString('assets/welcome.md');
+      if (!mounted || _docCtrl.filePath != null || _docCtrl.dirty) return;
+      _docCtrl
+        ..loadText(text)
+        ..markSaved();
+    } catch (_) {
+      // Unreadable prefs or missing asset: stay with the empty document.
+    }
   }
 
   @override
