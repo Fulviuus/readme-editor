@@ -1,11 +1,14 @@
 /// Native platforms: the fence body is typeset by the bundled mermaid
-/// engine inside a transparent inline webview. The webview is display-only
-/// (pointer events ignored) so clicking a diagram focuses the block for
-/// editing, exactly like every other rendered block.
+/// engine in a HEADLESS webview and captured as an image. The document
+/// shows only the snapshot — a plain widget that scrolls, clicks and
+/// selects like everything else (a live inline webview would swallow
+/// scroll events over the diagram).
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -25,6 +28,18 @@ Future<String>? _mermaidJs;
 Future<String> _loadMermaidJs() =>
     _mermaidJs ??= rootBundle.loadString('assets/js/mermaid.min.js');
 
+class _RenderedDiagram {
+  const _RenderedDiagram({this.png, this.height = 0, this.error});
+  final Uint8List? png;
+  final double height;
+  final String? error;
+}
+
+/// Snapshot cache so scrolling a diagram out of view and back does not
+/// re-run the engine. Keyed by theme-brightness, width and source.
+final _cache = <String, _RenderedDiagram>{};
+const _cacheCap = 24;
+
 class MermaidBlockView extends StatefulWidget {
   const MermaidBlockView(
       {super.key, required this.block, required this.editor});
@@ -37,20 +52,11 @@ class MermaidBlockView extends StatefulWidget {
 }
 
 class _MermaidBlockViewState extends State<MermaidBlockView> {
-  double? _height;
-  String? _error;
+  /// Keys currently being rendered (across all instances).
+  static final _inFlight = <String>{};
 
   bool get _dark =>
       widget.editor.theme.background.computeLuminance() < 0.5;
-
-  @override
-  void didUpdateWidget(MermaidBlockView old) {
-    super.didUpdateWidget(old);
-    if (old.block.codeBody != widget.block.codeBody) {
-      _height = null;
-      _error = null;
-    }
-  }
 
   void _focus() {
     final firstNl = widget.block.source.indexOf('\n');
@@ -65,57 +71,126 @@ class _MermaidBlockViewState extends State<MermaidBlockView> {
     }
     final theme = widget.editor.theme;
     final body = widget.block.codeBody;
-    if (_error != null) return _errorFallback(theme);
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: _focus,
-      child: SizedBox(
-        height: _height ?? theme.fontSize * 6,
-        width: double.infinity,
-        child: IgnorePointer(
-          child: FutureBuilder<String>(
-            future: _loadMermaidJs(),
-            builder: (context, snap) {
-              if (!snap.hasData) return const SizedBox.shrink();
-              return InAppWebView(
-                // Recreate the page when the diagram or theme changes.
-                key: ValueKey('${_dark ? 'd' : 'l'}:${body.hashCode}'),
-                initialSettings: InAppWebViewSettings(
-                  transparentBackground: true,
-                  disableContextMenu: true,
-                  supportZoom: false,
-                ),
-                initialData:
-                    InAppWebViewInitialData(data: _html(snap.data!, body)),
-                onWebViewCreated: (controller) {
-                  controller.addJavaScriptHandler(
-                    handlerName: 'mermaidSize',
-                    callback: (args) {
-                      final h = (args.first as num).toDouble();
-                      if (mounted && h > 0) {
-                        setState(() => _height = h + theme.fontSize * 0.8);
-                      }
-                    },
-                  );
-                  controller.addJavaScriptHandler(
-                    handlerName: 'mermaidError',
-                    callback: (args) {
-                      if (mounted) {
-                        setState(() => _error = args.firstOrNull?.toString());
-                      }
-                    },
-                  );
-                },
-              );
-            },
+    return LayoutBuilder(builder: (context, constraints) {
+      final width = constraints.maxWidth.isFinite
+          ? constraints.maxWidth
+          : theme.contentMaxWidth;
+      final key = '${_dark ? 'd' : 'l'}|${width.round()}|${body.hashCode}';
+      final cached = _cache[key];
+      if (cached == null) {
+        _startRender(key, body, width);
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _focus,
+          child: SizedBox(
+            height: theme.fontSize * 6,
+            width: double.infinity,
+            child: Center(
+              child: Text('diagram…',
+                  style: theme.monoStyle.copyWith(
+                      fontSize: theme.fontSize * 0.75,
+                      color: theme.hintColor)),
+            ),
+          ),
+        );
+      }
+      if (cached.error != null || cached.png == null) {
+        return _errorFallback(theme, cached.error ?? 'diagram failed');
+      }
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _focus,
+        child: Container(
+          width: double.infinity,
+          padding: EdgeInsets.symmetric(vertical: theme.fontSize * 0.4),
+          alignment: Alignment.center,
+          child: Image.memory(
+            cached.png!,
+            width: width,
+            height: cached.height,
+            fit: BoxFit.contain,
+            gaplessPlayback: true,
+            filterQuality: FilterQuality.medium,
           ),
         ),
-      ),
-    );
+      );
+    });
+  }
+
+  Future<void> _startRender(String key, String body, double width) async {
+    if (_inFlight.contains(key)) return;
+    _inFlight.add(key);
+    HeadlessInAppWebView? headless;
+    try {
+      final engineJs = await _loadMermaidJs();
+      final completer = Completer<_RenderedDiagram>();
+      headless = HeadlessInAppWebView(
+        initialSize: Size(width, 400),
+        initialSettings: InAppWebViewSettings(
+          transparentBackground: true,
+          supportZoom: false,
+        ),
+        initialData: InAppWebViewInitialData(data: _html(engineJs, body)),
+        onWebViewCreated: (controller) {
+          controller.addJavaScriptHandler(
+            handlerName: 'mermaidSize',
+            callback: (args) async {
+              try {
+                final h =
+                    (args.first as num).toDouble().clamp(24.0, 4000.0);
+                await headless?.setSize(Size(width, h));
+                // One breath for the resized page to repaint.
+                await Future<void>.delayed(
+                    const Duration(milliseconds: 250));
+                final shot = await headless?.webViewController
+                    ?.takeScreenshot(
+                        screenshotConfiguration: ScreenshotConfiguration(
+                  compressFormat: CompressFormat.PNG,
+                  snapshotWidth: width.round() * 2, // retina-crisp
+                ));
+                if (!completer.isCompleted) {
+                  completer.complete(shot == null
+                      ? const _RenderedDiagram(error: 'snapshot failed')
+                      : _RenderedDiagram(png: shot, height: h));
+                }
+              } catch (e) {
+                if (!completer.isCompleted) {
+                  completer.complete(_RenderedDiagram(error: '$e'));
+                }
+              }
+            },
+          );
+          controller.addJavaScriptHandler(
+            handlerName: 'mermaidError',
+            callback: (args) {
+              if (!completer.isCompleted) {
+                completer.complete(_RenderedDiagram(
+                    error:
+                        args.isEmpty ? 'diagram failed' : '${args.first}'));
+              }
+            },
+          );
+        },
+      );
+      await headless.run();
+      final result = await completer.future.timeout(
+        const Duration(seconds: 20),
+        onTimeout: () =>
+            const _RenderedDiagram(error: 'diagram render timed out'),
+      );
+      if (_cache.length >= _cacheCap) _cache.remove(_cache.keys.first);
+      _cache[key] = result;
+    } catch (e) {
+      _cache[key] = _RenderedDiagram(error: '$e');
+    } finally {
+      unawaited(headless?.dispose() ?? Future<void>.value());
+      _inFlight.remove(key);
+    }
+    if (mounted) setState(() {});
   }
 
   /// Invalid diagram source: the plain code box plus the engine's message.
-  Widget _errorFallback(ReadmeTheme theme) {
+  Widget _errorFallback(ReadmeTheme theme, String message) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -123,7 +198,7 @@ class _MermaidBlockViewState extends State<MermaidBlockView> {
         Padding(
           padding: EdgeInsets.only(top: theme.fontSize * 0.25),
           child: Text(
-            _error!,
+            message,
             style: theme.monoStyle.copyWith(
                 fontSize: theme.fontSize * 0.7, color: theme.hintColor),
           ),

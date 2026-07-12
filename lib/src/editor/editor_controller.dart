@@ -262,7 +262,20 @@ class EditorController extends ChangeNotifier {
       _focusFlags[previous]?.value = false;
     }
     focusFlag(id).value = true;
-    focusNode.requestFocus();
+    if (focusNode.hasFocus && previous != null && previous != id) {
+      // The shared node keeps "focus" across the block-widget swap, so the
+      // incoming EditableText never sees a focus GAIN — and that gain is
+      // what opens the platform text-input connection. Without a cycle the
+      // new field looks focused but typing goes nowhere (and beeps).
+      _cyclingFocus = true;
+      focusNode.unfocus();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _cyclingFocus = false;
+        if (_focusedBlockId == id) focusNode.requestFocus();
+      });
+    } else {
+      focusNode.requestFocus();
+    }
     // Keep the per-item flag map bounded across splits/merges/file loads.
     // Pruned notifiers are dropped, not disposed: an unmounting item widget
     // may still remove its listener this frame.
@@ -285,7 +298,12 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// True while [focusBlock] cycles the node across a block swap — that
+  /// transient unfocus must not read as "focus went elsewhere".
+  bool _cyclingFocus = false;
+
   void _onFocusNodeChanged() {
+    if (_cyclingFocus) return;
     if (!focusNode.hasFocus && _focusedBlockId != null) {
       // Focus went elsewhere (sidebar, dialog): leave rendered mode.
       blur();
