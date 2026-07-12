@@ -162,6 +162,9 @@ class EditorController extends ChangeNotifier {
   /// the caret drifts far from the middle (false).
   bool typewriterCenterAlways = true;
 
+  /// Markdown syntax coloring in source mode (Cmd+/).
+  bool sourceHighlightEnabled = true;
+
   /// Render diagram code fences as diagrams (off: plain code box).
   bool diagramsEnabled = true;
 

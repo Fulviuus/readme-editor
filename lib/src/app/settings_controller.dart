@@ -68,6 +68,9 @@ class SettingsController extends ChangeNotifier {
   /// Typewriter mode recenters on every caret move (false: only on drift).
   bool typewriterCenterAlways = true;
 
+  /// Markdown syntax coloring in source mode.
+  bool sourceHighlight = true;
+
   // ---- Image ----
   bool copyImagesToAssets = false;
 
@@ -157,6 +160,7 @@ class SettingsController extends ChangeNotifier {
       copyWholeLine = await _prefs.getBool('copyWholeLine') ?? false;
       typewriterCenterAlways =
           await _prefs.getBool('typewriterCenterAlways') ?? true;
+      sourceHighlight = await _prefs.getBool('sourceHighlight') ?? true;
       autoWrapCode = await _prefs.getBool('autoWrapCode') ?? true;
       codeDefaultLanguage =
           await _prefs.getString('codeDefaultLanguage') ?? '';

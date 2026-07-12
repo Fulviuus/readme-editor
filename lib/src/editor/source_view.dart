@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 
 import '../document/document_controller.dart';
 import 'editor_controller.dart';
+import 'source_highlight_controller.dart';
 
 class SourceView extends StatefulWidget {
   const SourceView({super.key, required this.editor});
@@ -21,7 +22,7 @@ class SourceView extends StatefulWidget {
 }
 
 class _SourceViewState extends State<SourceView> {
-  late final TextEditingController _text;
+  late final SourceHighlightController _text;
   final FocusNode _focus = FocusNode(debugLabel: 'source-view');
   bool _committed = false;
 
@@ -38,7 +39,8 @@ class _SourceViewState extends State<SourceView> {
   void initState() {
     super.initState();
     _snapshot();
-    _text = TextEditingController(text: _initial);
+    _text = SourceHighlightController(text: _initial);
+    widget.editor.addListener(_onEditorChanged);
     widget.editor.sourceModeEnabled.addListener(_onSourceModeChanged);
     // Let the shell flush uncommitted source edits before save/dirty checks;
     // that commit re-arms so editing can continue after e.g. Cmd+S.
@@ -51,8 +53,14 @@ class _SourceViewState extends State<SourceView> {
     _initialRevision = _docCtrl.revision;
   }
 
+  /// Theme or highlight-preference changes repaint the field.
+  void _onEditorChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    widget.editor.removeListener(_onEditorChanged);
     widget.editor.sourceModeEnabled.removeListener(_onSourceModeChanged);
     if (widget.editor.commitSourceMode == _commitAndRearm) {
       widget.editor.commitSourceMode = null;
@@ -97,6 +105,9 @@ class _SourceViewState extends State<SourceView> {
       fontSize: theme.fontSize,
       height: 1.6,
     );
+    _text
+      ..theme = theme
+      ..highlightEnabled = widget.editor.sourceHighlightEnabled;
     return ColoredBox(
       color: theme.background,
       child: CallbackShortcuts(

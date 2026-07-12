@@ -80,6 +80,7 @@ class _ReadmeAppState extends State<ReadmeApp> with WidgetsBindingObserver {
       ..emojiAutocomplete = _settings.emojiAutocomplete
       ..codeDefaultLanguage = _settings.codeDefaultLanguage
       ..typewriterCenterAlways = _settings.typewriterCenterAlways
+      ..sourceHighlightEnabled = _settings.sourceHighlight
       ..diagramsEnabled = _settings.diagrams
       ..codeLineNumbers = _settings.codeLineNumbers
       ..autoWrapCode = _settings.autoWrapCode
