@@ -4,7 +4,6 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 
@@ -52,7 +51,6 @@ class _ReadmeAppState extends State<ReadmeApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     widget.themeManager.platformBrightness =
         WidgetsBinding.instance.platformDispatcher.platformBrightness;
-    _loadWelcome();
   }
 
   @override
@@ -96,20 +94,6 @@ class _ReadmeAppState extends State<ReadmeApp> with WidgetsBindingObserver {
     _workspace
       ..recordRecentFiles = _settings.recordRecentFiles
       ..defaultExtension = _settings.defaultExtension;
-  }
-
-  /// First-launch content: the welcome tour, until a real file is opened.
-  /// Loaded as untitled (no path) and marked saved so closing it never nags.
-  Future<void> _loadWelcome() async {
-    try {
-      final text = await rootBundle.loadString('assets/welcome.md');
-      if (!mounted || _docCtrl.filePath != null || _docCtrl.dirty) return;
-      _docCtrl
-        ..loadText(text)
-        ..markSaved();
-    } catch (_) {
-      // Missing asset: stay with the empty document.
-    }
   }
 
   @override
