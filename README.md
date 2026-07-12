@@ -7,6 +7,10 @@
   One surface, no split preview — <em>the document is the editor</em>.
 </p>
 
+<p align="center">
+  <img src="assets/brand/screenshot.png" alt="readme running on macOS" width="780">
+</p>
+
 ---
 
 The block you're editing shows its raw markdown (markers dimmed, live-styled);
