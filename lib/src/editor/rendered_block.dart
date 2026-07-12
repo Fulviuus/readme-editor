@@ -50,7 +50,8 @@ class RenderedBlock extends StatelessWidget {
   /// A closed `mermaid` fence with content renders as a diagram; anything
   /// else (other languages, half-typed fences) is a plain code block.
   Widget _code() {
-    if (block.kind == BlockKind.fencedCode &&
+    if (editor.diagramsEnabled &&
+        block.kind == BlockKind.fencedCode &&
         block.fenceLanguage?.toLowerCase() == 'mermaid' &&
         block.fenceIsClosed &&
         block.codeBody.trim().isNotEmpty) {

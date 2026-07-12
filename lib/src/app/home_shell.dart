@@ -4,6 +4,7 @@
 /// flows, window-title sync and window-close interception.
 library;
 
+import 'dart:async' show unawaited;
 import 'dart:ui' as ui;
 
 import 'package:desktop_drop/desktop_drop.dart';
@@ -35,7 +36,12 @@ import '../workspace/export/latex_export.dart';
 import '../workspace/export/rtf_export.dart';
 import '../workspace/file_history.dart';
 import '../workspace/file_io.dart'
-    show copyIntoFolder, readBinaryFileSync, writeBinaryFile, writeTextFile;
+    show
+        copyIntoFolder,
+        readBinaryFileSync,
+        revealInFileManager,
+        writeBinaryFile,
+        writeTextFile;
 import '../workspace/html_export.dart';
 import '../workspace/pandoc.dart';
 import '../workspace/pdf_export.dart';
@@ -104,6 +110,37 @@ class _HomeShellState extends State<HomeShell> {
       setPreventCloseEnabled(true);
       setWindowCloseHandler(_handleWindowClose);
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _autoCheckUpdates());
+  }
+
+  /// Preferences > General: silent startup update check — only surfaces
+  /// a dialog when a newer release actually exists.
+  Future<void> _autoCheckUpdates() async {
+    // Wait out the async prefs load without racing it.
+    for (var i = 0; i < 50 && !_settings.loaded; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    if (!mounted || !_settings.checkUpdatesAutomatically) return;
+    final result = await checkForUpdates();
+    if (!mounted || result is! UpdateAvailable) return;
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Update available'),
+        content: Text(
+            'readme ${result.version} is available (you have $appVersion).'),
+        actions: [
+          TextButton(
+            onPressed: () => launchUrl(Uri.parse(result.url)),
+            child: const Text('View Release'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Applies the persisted sidebar state once the async prefs load lands.
@@ -364,6 +401,11 @@ class _HomeShellState extends State<HomeShell> {
 
   Future<void> _openPath(String path) async {
     _editor.commitSourceMode?.call();
+    // Preferences > Files: save silently instead of prompting when
+    // switching to another file.
+    if (_settings.saveOnFileSwitch && _doc.dirty && _doc.filePath != null) {
+      await _saveDocument();
+    }
     if (await _confirmLoseChanges()) {
       _prepareForDocumentSwitch();
       await _workspace.openPath(path);
@@ -453,7 +495,7 @@ class _HomeShellState extends State<HomeShell> {
   /// opened as a new untitled document.
   Future<void> _importFile() async {
     _editor.commitSourceMode?.call();
-    final pandoc = await findPandoc();
+    final pandoc = await findPandoc(override: _settings.pandocPath);
     if (pandoc == null) {
       _showPandocMissing();
       return;
@@ -499,7 +541,7 @@ class _HomeShellState extends State<HomeShell> {
   Future<void> _exportDoc(String ext) async {
     _editor.commitSourceMode?.call();
     if (ext == 'odt') {
-      final pandoc = await findPandoc();
+      final pandoc = await findPandoc(override: _settings.pandocPath);
       if (pandoc == null) {
         _showPandocMissing();
         return;
@@ -530,8 +572,11 @@ class _HomeShellState extends State<HomeShell> {
         case 'tex':
           await writeTextFile(path, buildLatex(_doc.doc, title: title));
         case 'odt':
-          final pandoc = await findPandoc();
+          final pandoc = await findPandoc(override: _settings.pandocPath);
           await pandocExport(pandoc!, _doc.serialize(), path, title: title);
+      }
+      if (_settings.revealAfterExport) {
+        unawaited(revealInFileManager(path));
       }
     } on PandocException catch (e) {
       _showErrorDialog('Export failed', e.message);
@@ -811,20 +856,31 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   /// Resolves where an inserted/dropped image should live and how to link
-  /// it: optionally copied into `<doc folder>/assets`, then made relative
-  /// to the document when possible.
+  /// it: optionally copied into `<doc folder>/assets`, then linked per the
+  /// relative-path preferences.
   Future<String> _storeImagePath(String srcPath) async {
     final docDir = _doc.filePath == null ? null : p.dirname(_doc.filePath!);
     var path = srcPath;
-    if (docDir != null && context.read<SettingsController>().copyImagesToAssets) {
+    if (docDir != null && _settings.copyImagesToAssets) {
       try {
         path = await copyIntoFolder(srcPath, p.join(docDir, 'assets'));
       } catch (_) {
         path = srcPath; // unreadable source/folder: link the original
       }
     }
-    if (docDir != null && p.isWithin(docDir, path)) {
-      path = p.relative(path, from: docDir);
+    return _linkFor(path, docDir);
+  }
+
+  /// Applies the relative-path preferences to an image link.
+  String _linkFor(String path, String? docDir) {
+    if (_settings.relativeImagePaths &&
+        docDir != null &&
+        p.isWithin(docDir, path)) {
+      var rel = p.relative(path, from: docDir);
+      if (_settings.dotSlashImagePaths && !rel.startsWith('.')) {
+        rel = './$rel';
+      }
+      return rel;
     }
     return path;
   }
@@ -866,8 +922,7 @@ class _HomeShellState extends State<HomeShell> {
     try {
       final docDir =
           _doc.filePath == null ? null : p.dirname(_doc.filePath!);
-      final copyToAssets =
-          mounted && context.read<SettingsController>().copyImagesToAssets;
+      final copyToAssets = _settings.copyImagesToAssets;
       final name =
           'pasted-image-${DateTime.now().millisecondsSinceEpoch}.png';
       final String target;
@@ -877,10 +932,7 @@ class _HomeShellState extends State<HomeShell> {
         target = p.join((await getTemporaryDirectory()).path, name);
       }
       await writeBinaryFile(target, png);
-      final link = docDir != null && p.isWithin(docDir, target)
-          ? p.relative(target, from: docDir)
-          : target;
-      _editor.insertImage(link, alt: '');
+      _editor.insertImage(_linkFor(target, docDir), alt: '');
     } catch (_) {
       // No writable destination: nothing sensible to paste.
     }

@@ -119,6 +119,21 @@ class EditorController extends ChangeNotifier {
   bool smartQuotes = false;
   bool smartDashes = false;
 
+  /// Typing an opening bracket/quote inserts its closing pair.
+  bool autoPairBrackets = false;
+
+  /// Typing an inline markdown marker (` * _ ~ `) inserts its closer too.
+  bool autoPairMarkdown = false;
+
+  /// Marker for new unordered lists ('-' | '*' | '+').
+  String bulletMarker = '-';
+
+  /// Render diagram code fences as diagrams (off: plain code box).
+  bool diagramsEnabled = true;
+
+  /// Line-number gutter on rendered code blocks.
+  bool codeLineNumbers = false;
+
   /// Installed by the app shell: resolves and opens a link URL (http(s) in
   /// the browser, relative .md paths in the editor). The editor layer stays
   /// free of url_launcher / workspace knowledge.
@@ -494,6 +509,29 @@ class EditorController extends ChangeNotifier {
     if (grew && v.selection.isCollapsed && v.selection.baseOffset > 0) {
       committed = v.text[v.selection.baseOffset - 1];
     }
+    // Auto pairing (single-character insertions with a collapsed caret).
+    if ((autoPairBrackets || autoPairMarkdown) &&
+        committed != null &&
+        v.text.length == old.text.length + 1 &&
+        v.selection.isCollapsed) {
+      final paired = _applyAutoPair(v, committed);
+      if (paired != null) {
+        final b = docCtrl.doc.blockById(id);
+        if (b != null) _setEditingValue(b, paired);
+        _lastValue = paired;
+        docCtrl.changeBlockSource(
+          id,
+          paired.text,
+          kind: EditKind.typing,
+          caretBefore: CaretSnapshot(id, old.selection.baseOffset,
+              old.selection.extentOffset),
+          caretAfter: _snap(paired.selection),
+        );
+        final updated = docCtrl.doc.blockById(id);
+        if (updated != null) editing.fallbackKind = updated.kind;
+        return;
+      }
+    }
     // Input substitutions (single-character insertions only, never in
     // code-like blocks).
     if ((smartQuotes || smartDashes) &&
@@ -537,6 +575,53 @@ class EditorController extends ChangeNotifier {
     BlockKind.html,
     BlockKind.frontMatter,
   };
+
+  static const _bracketPairs = {'(': ')', '[': ']', '{': '}'};
+  static const _quotePairs = {'"': '"', "'": "'"};
+  static const _markerPairs = {'*': '*', '_': '_', '~': '~', '`': '`'};
+
+  /// Inserts the closing pair for the just-typed opener, caret staying
+  /// between the two. Returns null when pairing doesn't apply — closer
+  /// characters, mid-word positions, or when the same closer is already
+  /// next (so typing the closer just moves past our inserted one).
+  TextEditingValue? _applyAutoPair(TextEditingValue v, String typed) {
+    final at = v.selection.baseOffset - 1; // index of the typed char
+    if (at < 0) return null;
+    final text = v.text;
+    final next = at + 1 < text.length ? text[at + 1] : '';
+
+    // Typing a closer directly before an identical closer: swallow it
+    // (the caret just moves past the one auto-pairing inserted).
+    final skipOver = (autoPairBrackets &&
+            (_bracketPairs.containsValue(typed) ||
+                _quotePairs.containsKey(typed))) ||
+        (autoPairMarkdown && _markerPairs.containsKey(typed));
+    if (skipOver && next == typed && !_bracketPairs.containsKey(typed)) {
+      return TextEditingValue(
+        text: text.replaceRange(at, at + 1, ''),
+        selection: TextSelection.collapsed(offset: at + 1),
+      );
+    }
+
+    String? closer;
+    if (autoPairBrackets && _bracketPairs.containsKey(typed)) {
+      closer = _bracketPairs[typed];
+    } else if (autoPairBrackets && _quotePairs.containsKey(typed)) {
+      if (smartQuotes) return null; // substitution owns quotes then
+      closer = _quotePairs[typed];
+    } else if (autoPairMarkdown && _markerPairs.containsKey(typed)) {
+      closer = _markerPairs[typed];
+    }
+    if (closer == null) return null;
+    // Only pair before a boundary — never split a word.
+    if (next.isNotEmpty && !RegExp(r'''[\s)\]}.,;:!?'"]''').hasMatch(next)) {
+      return null;
+    }
+    return TextEditingValue(
+      text: text.replaceRange(at + 1, at + 1, closer),
+      selection: TextSelection.collapsed(offset: at + 1),
+    );
+  }
 
   /// Smart-quote/dash conversion of the just-typed character. Returns the
   /// new editing value, or null when no substitution applies.
@@ -1868,7 +1953,7 @@ class EditorController extends ChangeNotifier {
     _convertTo(converted, converted.length);
   }
 
-  void convertToUnorderedList() => _convertToList((_) => '- ',
+  void convertToUnorderedList() => _convertToList((_) => '$bulletMarker ',
       isAlready: (b) => b.kind == BlockKind.list && !b.isOrderedList &&
           !b.hasTaskItems);
 

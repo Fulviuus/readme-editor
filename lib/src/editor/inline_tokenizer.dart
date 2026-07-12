@@ -125,6 +125,11 @@ final _bracketAutolinkRe =
 final _bareUrlRe = RegExp(r'^https?://[^\s<>]+');
 bool _isAlnum(String c) => RegExp(r'[a-zA-Z0-9]').hasMatch(c);
 
+/// Whether `$…$` tokenizes as inline math (Preferences > Markdown).
+/// Process-wide because tokenization is a pure function used by every
+/// layer (renderer, exporters, word count) that must all agree.
+bool inlineMathEnabled = true;
+
 List<InlineNode> tokenizeInline(String s) => _parse(s, 0, s.length);
 
 /// The rendered plain text of [s] with all inline syntax stripped: markers
@@ -266,7 +271,7 @@ List<InlineNode> _parse(String s, int from, int to) {
     // Inline math: `$tex$` — no space just inside either `$`, one line,
     // and the closer must not be followed by a digit, so prices like
     // "$5 and $6" stay plain text.
-    if (c == r'$') {
+    if (c == r'$' && inlineMathEnabled) {
       final close = _findMathClose(s, i + 1, to);
       if (close >= 0) {
         flushText(i);

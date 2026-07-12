@@ -1006,4 +1006,50 @@ void main() {
       expect(editor.focusedBlockId, id);
     });
   });
+
+  group('auto pairing', () {
+    test('typing an opening bracket inserts the pair, caret between', () {
+      doc.loadText('ab');
+      editor.autoPairBrackets = true;
+      editor.focusBlock(doc.doc.blocks.first.id, offset: 2);
+      type('ab(', 3);
+      expect(doc.doc.blocks.first.source, 'ab()');
+      expect(editor.editing.selection.baseOffset, 3);
+    });
+
+    test('typing the closer just moves past the inserted one', () {
+      doc.loadText('');
+      editor.autoPairBrackets = true;
+      editor.focusBlock(doc.doc.blocks.first.id, offset: 0);
+      type('(', 1); // pairs to () with the caret inside
+      expect(editor.editing.text, '()');
+      expect(editor.editing.selection.baseOffset, 1);
+      type('())', 2); // user types ')' between the pair
+      expect(editor.editing.text, '()');
+      expect(editor.editing.selection.baseOffset, 2);
+    });
+
+    test('markdown markers pair only with their own setting', () {
+      doc.loadText('x');
+      editor.autoPairBrackets = true;
+      editor.focusBlock(doc.doc.blocks.first.id, offset: 1);
+      type('x*', 2);
+      expect(doc.doc.blocks.first.source, 'x*'); // marker not paired
+
+      doc.loadText('y');
+      editor.autoPairMarkdown = true;
+      editor.focusBlock(doc.doc.blocks.first.id, offset: 1);
+      type('y~', 2);
+      expect(doc.doc.blocks.first.source, 'y~~');
+      expect(editor.editing.selection.baseOffset, 2);
+    });
+
+    test('never pairs directly before a word', () {
+      doc.loadText('hello');
+      editor.autoPairBrackets = true;
+      editor.focusBlock(doc.doc.blocks.first.id, offset: 0);
+      type('(hello', 1);
+      expect(doc.doc.blocks.first.source, '(hello');
+    });
+  });
 }

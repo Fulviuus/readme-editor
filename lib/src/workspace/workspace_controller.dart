@@ -196,11 +196,13 @@ class WorkspaceController extends ChangeNotifier {
     final current = docCtrl.filePath;
     final location = await getSaveLocation(
       acceptedTypeGroups: const [_markdownTypeGroup],
-      suggestedName: current == null ? 'Untitled.md' : p.basename(current),
+      suggestedName: current == null
+          ? 'Untitled.$defaultExtension'
+          : p.basename(current),
     );
     if (location == null) return false;
     var path = location.path;
-    if (p.extension(path).isEmpty) path = '$path.md';
+    if (p.extension(path).isEmpty) path = '$path.$defaultExtension';
     final revision = docCtrl.revision;
     final text = docCtrl.serialize();
     try {
@@ -356,7 +358,14 @@ class WorkspaceController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Preferences > Files: whether Open Recent records anything.
+  bool recordRecentFiles = true;
+
+  /// Preferences > Files: extension for new documents and Save As.
+  String defaultExtension = 'md';
+
   Future<void> _addRecentFile(String path) async {
+    if (!recordRecentFiles) return;
     // Never write before the persisted history has been merged in, or an
     // early open would clobber it with a one-entry list.
     try {
@@ -392,6 +401,18 @@ class WorkspaceController extends ChangeNotifier {
       // folder just yields an empty tree, which openFolder handles.
       if (dir != null && _folder == null && !_disposed) {
         await openFolder(dir);
+      }
+    } catch (_) {}
+    // Preferences > Files > On Launch: reopen the last file. Skipped when
+    // a document is already loaded (dirty, or opened via the OS).
+    try {
+      final action = await _prefs.getString('launchAction');
+      if (action == 'reopenLast' &&
+          !_disposed &&
+          docCtrl.filePath == null &&
+          !docCtrl.dirty &&
+          _recentFiles.isNotEmpty) {
+        await openPath(_recentFiles.first);
       }
     } catch (_) {}
   }

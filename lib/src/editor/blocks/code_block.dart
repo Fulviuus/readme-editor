@@ -103,12 +103,34 @@ class CodeBlockView extends StatelessWidget {
                       color: theme.hintColor),
                 ),
               ),
-            TappableInlineText(
-              span: block.kind == BlockKind.indentedCode
-                  ? TextSpan(text: block.source, style: mono)
-                  : span,
-              runs: runs,
-              onCaret: (offset) => editor.focusBlock(block.id, offset: offset),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (editor.codeLineNumbers)
+                  Padding(
+                    padding: EdgeInsets.only(right: theme.fontSize * 0.75),
+                    child: Text(
+                      [
+                        for (var i = 1;
+                            i <= displayBody.split('\n').length;
+                            i++)
+                          '$i'
+                      ].join('\n'),
+                      textAlign: TextAlign.right,
+                      style: mono.copyWith(color: theme.hintColor),
+                    ),
+                  ),
+                Expanded(
+                  child: TappableInlineText(
+                    span: block.kind == BlockKind.indentedCode
+                        ? TextSpan(text: block.source, style: mono)
+                        : span,
+                    runs: runs,
+                    onCaret: (offset) =>
+                        editor.focusBlock(block.id, offset: offset),
+                  ),
+                ),
+              ],
             ),
           ],
         ),

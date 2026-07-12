@@ -15,9 +15,14 @@ class PandocException implements Exception {
 }
 
 /// Absolute path of the pandoc executable, or null if not installed.
-/// Probes the usual install locations first because GUI apps don't inherit
-/// a login shell's PATH.
-Future<String?> findPandoc() async {
+/// A user-configured [override] (Preferences > Export) wins; otherwise the
+/// usual install locations are probed because GUI apps don't inherit a
+/// login shell's PATH.
+Future<String?> findPandoc({String? override}) async {
+  if (override != null && override.isNotEmpty) {
+    if (File(override).existsSync()) return override;
+    return null; // an explicit-but-wrong path should fail loudly, not mask
+  }
   for (final candidate in [
     '/opt/homebrew/bin/pandoc',
     '/usr/local/bin/pandoc',

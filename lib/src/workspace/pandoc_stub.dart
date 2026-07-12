@@ -8,7 +8,7 @@ class PandocException implements Exception {
   String toString() => message;
 }
 
-Future<String?> findPandoc() async => null;
+Future<String?> findPandoc({String? override}) async => null;
 
 Future<String> pandocImport(String pandoc, String path) async =>
     throw PandocException('Pandoc is unavailable on this platform.');

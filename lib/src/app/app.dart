@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 
 import '../document/document_controller.dart';
 import '../editor/editor_controller.dart';
+import '../editor/inline_tokenizer.dart' show inlineMathEnabled;
 import '../theme/material_theme.dart';
 import '../theme/theme_manager.dart';
 import '../workspace/workspace_controller.dart';
@@ -47,14 +48,23 @@ class _ReadmeAppState extends State<ReadmeApp> {
   }
 
   void _onSettingsChanged() {
+    inlineMathEnabled = _settings.inlineMath;
     _editor
       ..smartQuotes = _settings.smartQuotes
       ..smartDashes = _settings.smartDashes
       ..spellCheckEnabled = _settings.spellCheck
+      ..autoPairBrackets = _settings.autoPairBrackets
+      ..autoPairMarkdown = _settings.autoPairMarkdown
+      ..bulletMarker = _settings.bulletMarker
+      ..diagramsEnabled = _settings.diagrams
+      ..codeLineNumbers = _settings.codeLineNumbers
       ..applyRenderSettings(
         preserveSingleLineBreak: _settings.preserveSingleLineBreak,
         visibleBr: _settings.visibleBr,
       );
+    _workspace
+      ..recordRecentFiles = _settings.recordRecentFiles
+      ..defaultExtension = _settings.defaultExtension;
   }
 
   /// First-launch content: the welcome tour, until a real file is opened.

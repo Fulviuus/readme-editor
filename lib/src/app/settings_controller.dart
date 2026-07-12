@@ -1,6 +1,5 @@
 /// User preferences beyond theme/zoom (which live on ThemeManager) and
-/// autosave (WorkspaceController): editor text-substitution and line-break
-/// behavior. Persisted via SharedPreferences.
+/// autosave (WorkspaceController). Persisted via SharedPreferences.
 library;
 
 import 'package:flutter/foundation.dart';
@@ -9,50 +8,71 @@ import 'package:shared_preferences/shared_preferences.dart';
 class SettingsController extends ChangeNotifier {
   final SharedPreferencesAsync _prefs = SharedPreferencesAsync();
 
-  static const _kSmartQuotes = 'smartQuotes';
-  static const _kSmartDashes = 'smartDashes';
-  static const _kPreserveLineBreak = 'preserveSingleLineBreak';
-  static const _kVisibleBr = 'visibleBr';
-  static const _kSpellCheck = 'spellCheck';
-  static const _kCopyImagesToAssets = 'copyImagesToAssets';
-  static const _kSidebarVisible = 'sidebarVisible';
-  static const _kSidebarPane = 'sidebarPane';
+  // ---- General / files ----
+  /// 'new' opens an empty document on launch; 'reopenLast' restores the
+  /// most recent file.
+  String launchAction = 'new';
 
-  bool _smartQuotes = false;
-  bool _smartDashes = false;
-  bool _preserveSingleLineBreak = true;
-  bool _visibleBr = false;
-  bool _spellCheck = true;
-  bool _copyImagesToAssets = false;
-  bool _sidebarVisible = true;
-  String _sidebarPane = 'fileTree';
+  /// Extension for new documents and Save As ('md' | 'markdown' | 'txt').
+  String defaultExtension = 'md';
 
-  /// Convert straight quotes to curly while typing.
-  bool get smartQuotes => _smartQuotes;
+  /// Save (instead of prompting) when switching files from the sidebar
+  /// while the current document is dirty and has a path.
+  bool saveOnFileSwitch = false;
 
-  /// Convert `--` to an em dash while typing.
-  bool get smartDashes => _smartDashes;
+  /// Track recently opened files for File > Open Recent.
+  bool recordRecentFiles = true;
 
-  /// Render a single `\n` inside a paragraph as a line break (true, the
-  /// default) or as a space (CommonMark strictness).
-  bool get preserveSingleLineBreak => _preserveSingleLineBreak;
+  /// Silently check the release feed at startup; only speaks up when an
+  /// update exists.
+  bool checkUpdatesAutomatically = false;
 
-  /// Show `<br>` tags as a dimmed `↵` glyph instead of hiding them.
-  bool get visibleBr => _visibleBr;
+  // ---- Editor ----
+  bool spellCheck = true;
+  bool smartQuotes = false;
+  bool smartDashes = false;
 
-  /// Squiggle misspellings in the block being edited (system spell checker;
-  /// native platforms only).
-  bool get spellCheck => _spellCheck;
+  /// Typing `(`, `[`, `{`, `"` or `'` inserts the closing pair.
+  bool autoPairBrackets = false;
 
-  /// Copy inserted/dropped/pasted images into an `assets` folder next to
-  /// the document (when it has been saved) and link them relatively.
-  bool get copyImagesToAssets => _copyImagesToAssets;
+  /// Typing `*`, `_`, `~` or a backtick inserts the closing marker too.
+  bool autoPairMarkdown = false;
 
-  /// Sidebar state, restored on the next launch.
-  bool get sidebarVisible => _sidebarVisible;
+  // ---- Image ----
+  bool copyImagesToAssets = false;
 
-  /// Active sidebar pane, by [SidebarPane] enum name.
-  String get sidebarPane => _sidebarPane;
+  /// Link inserted images relative to the document when possible.
+  bool relativeImagePaths = true;
+
+  /// Prefix relative image links with `./`.
+  bool dotSlashImagePaths = false;
+
+  // ---- Markdown ----
+  /// Marker used when converting to an unordered list ('-' | '*' | '+').
+  String bulletMarker = '-';
+
+  /// Render `$…$` as inline math (off leaves it literal text).
+  bool inlineMath = true;
+
+  /// Render diagram code fences as diagrams.
+  bool diagrams = true;
+
+  /// Line-number gutter on code blocks.
+  bool codeLineNumbers = false;
+
+  bool preserveSingleLineBreak = true;
+  bool visibleBr = false;
+
+  // ---- Export ----
+  /// Explicit pandoc executable path; empty means auto-discover.
+  String pandocPath = '';
+
+  /// Reveal exported files in the file manager after a successful export.
+  bool revealAfterExport = false;
+
+  // ---- Window/sidebar state (restored on launch) ----
+  bool sidebarVisible = true;
+  String sidebarPane = 'fileTree';
 
   /// True once [load] has completed (with stored values or defaults) —
   /// consumers restoring UI state wait for this.
@@ -61,16 +81,34 @@ class SettingsController extends ChangeNotifier {
 
   Future<void> load() async {
     try {
-      _smartQuotes = await _prefs.getBool(_kSmartQuotes) ?? false;
-      _smartDashes = await _prefs.getBool(_kSmartDashes) ?? false;
-      _preserveSingleLineBreak =
-          await _prefs.getBool(_kPreserveLineBreak) ?? true;
-      _visibleBr = await _prefs.getBool(_kVisibleBr) ?? false;
-      _spellCheck = await _prefs.getBool(_kSpellCheck) ?? true;
-      _copyImagesToAssets =
-          await _prefs.getBool(_kCopyImagesToAssets) ?? false;
-      _sidebarVisible = await _prefs.getBool(_kSidebarVisible) ?? true;
-      _sidebarPane = await _prefs.getString(_kSidebarPane) ?? 'fileTree';
+      launchAction = await _prefs.getString('launchAction') ?? 'new';
+      defaultExtension = await _prefs.getString('defaultExtension') ?? 'md';
+      saveOnFileSwitch = await _prefs.getBool('saveOnFileSwitch') ?? false;
+      recordRecentFiles = await _prefs.getBool('recordRecentFiles') ?? true;
+      checkUpdatesAutomatically =
+          await _prefs.getBool('checkUpdatesAutomatically') ?? false;
+      spellCheck = await _prefs.getBool('spellCheck') ?? true;
+      smartQuotes = await _prefs.getBool('smartQuotes') ?? false;
+      smartDashes = await _prefs.getBool('smartDashes') ?? false;
+      autoPairBrackets = await _prefs.getBool('autoPairBrackets') ?? false;
+      autoPairMarkdown = await _prefs.getBool('autoPairMarkdown') ?? false;
+      copyImagesToAssets =
+          await _prefs.getBool('copyImagesToAssets') ?? false;
+      relativeImagePaths =
+          await _prefs.getBool('relativeImagePaths') ?? true;
+      dotSlashImagePaths =
+          await _prefs.getBool('dotSlashImagePaths') ?? false;
+      bulletMarker = await _prefs.getString('bulletMarker') ?? '-';
+      inlineMath = await _prefs.getBool('inlineMath') ?? true;
+      diagrams = await _prefs.getBool('diagrams') ?? true;
+      codeLineNumbers = await _prefs.getBool('codeLineNumbers') ?? false;
+      preserveSingleLineBreak =
+          await _prefs.getBool('preserveSingleLineBreak') ?? true;
+      visibleBr = await _prefs.getBool('visibleBr') ?? false;
+      pandocPath = await _prefs.getString('pandocPath') ?? '';
+      revealAfterExport = await _prefs.getBool('revealAfterExport') ?? false;
+      sidebarVisible = await _prefs.getBool('sidebarVisible') ?? true;
+      sidebarPane = await _prefs.getString('sidebarPane') ?? 'fileTree';
     } catch (_) {
       // Unreadable prefs: keep the defaults.
     }
@@ -78,34 +116,24 @@ class SettingsController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _set(String key, bool value, void Function() apply) async {
+  /// Applies and persists one setting (best-effort write).
+  Future<void> update(String key, Object value, void Function() apply) async {
     apply();
     notifyListeners();
     try {
-      await _prefs.setBool(key, value);
+      if (value is bool) {
+        await _prefs.setBool(key, value);
+      } else if (value is String) {
+        await _prefs.setString(key, value);
+      }
     } catch (_) {}
   }
 
-  Future<void> setSmartQuotes(bool v) =>
-      _set(_kSmartQuotes, v, () => _smartQuotes = v);
-  Future<void> setSmartDashes(bool v) =>
-      _set(_kSmartDashes, v, () => _smartDashes = v);
-  Future<void> setPreserveSingleLineBreak(bool v) =>
-      _set(_kPreserveLineBreak, v, () => _preserveSingleLineBreak = v);
-  Future<void> setVisibleBr(bool v) =>
-      _set(_kVisibleBr, v, () => _visibleBr = v);
+  // Convenience setters kept for existing call sites.
   Future<void> setSpellCheck(bool v) =>
-      _set(_kSpellCheck, v, () => _spellCheck = v);
-  Future<void> setCopyImagesToAssets(bool v) =>
-      _set(_kCopyImagesToAssets, v, () => _copyImagesToAssets = v);
+      update('spellCheck', v, () => spellCheck = v);
   Future<void> setSidebarVisible(bool v) =>
-      _set(_kSidebarVisible, v, () => _sidebarVisible = v);
-
-  Future<void> setSidebarPane(String name) async {
-    _sidebarPane = name;
-    notifyListeners();
-    try {
-      await _prefs.setString(_kSidebarPane, name);
-    } catch (_) {}
-  }
+      update('sidebarVisible', v, () => sidebarVisible = v);
+  Future<void> setSidebarPane(String v) =>
+      update('sidebarPane', v, () => sidebarPane = v);
 }
