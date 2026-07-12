@@ -77,11 +77,22 @@ class ListBlockView extends StatelessWidget {
           _row(
             indentPx: _indentPx(indent, theme.fontSize),
             glyph: checkbox != null
-                ? _TaskCheckbox(
-                    checked: checkbox.toLowerCase() == '[x]',
-                    editor: editor,
-                    blockId: block.id,
-                    lineIndex: li,
+                // The box rides inside a real text line: the paragraph
+                // supplies the baseline the row aligns on (a bare box has
+                // none) and `middle` centers it on that line.
+                ? Text.rich(
+                    TextSpan(children: [
+                      WidgetSpan(
+                        alignment: PlaceholderAlignment.middle,
+                        child: _TaskCheckbox(
+                          checked: checkbox.toLowerCase() == '[x]',
+                          editor: editor,
+                          blockId: block.id,
+                          lineIndex: li,
+                        ),
+                      ),
+                    ]),
+                    style: theme.bodyStyle,
                   )
                 : ordered
                 ? Text(marker,
@@ -188,33 +199,21 @@ class _TaskCheckbox extends StatelessWidget {
     final size = theme.fontSize * 0.85;
     return GestureDetector(
       onTap: () => editor.toggleTask(blockId, lineIndex),
-      // Keep the box at its own size — the glyph slot's tight constraints
-      // would otherwise stretch it to the full slot width. The row aligns
-      // by baseline; a box without one hangs from the baseline like a
-      // glyph, which is exactly where a checkbox should sit.
-      child: Align(
-        alignment: Alignment.topLeft,
-        heightFactor: 1,
-        child: Padding(
-          padding: EdgeInsets.zero,
-          child: Container(
-            width: size,
-            height: size,
-            decoration: BoxDecoration(
-              color: checked ? theme.checkboxAccent : null,
-              border: Border.all(
-                color:
-                    theme.checkboxBorder ??
-                    theme.checkboxAccent.withValues(alpha: 0.7),
-                width: 1.2,
-              ),
-              borderRadius: BorderRadius.circular(3),
-            ),
-            child: checked
-                ? Icon(Icons.check, size: size * 0.8, color: theme.background)
-                : null,
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: checked ? theme.checkboxAccent : null,
+          border: Border.all(
+            color: theme.checkboxBorder ??
+                theme.checkboxAccent.withValues(alpha: 0.7),
+            width: 1.2,
           ),
+          borderRadius: BorderRadius.circular(3),
         ),
+        child: checked
+            ? Icon(Icons.check, size: size * 0.8, color: theme.background)
+            : null,
       ),
     );
   }
