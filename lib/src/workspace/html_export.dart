@@ -65,6 +65,9 @@ Future<bool> exportHtmlDialog(
 
 // ---- Theme -> CSS ----
 
+/// The theme stylesheet, shared with the EPUB exporter.
+String themeCssFor(ReadmeTheme t) => _themeCss(t);
+
 String _themeCss(ReadmeTheme t) {
   final buf = StringBuffer();
 

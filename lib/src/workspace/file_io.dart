@@ -12,6 +12,7 @@ export 'file_io_web.dart'
         copyIntoFolder,
         duplicateFile,
         listMarkdownTree,
+        readBinaryFileSync,
         readTextFile,
         renameFile,
         revealInFileManager,

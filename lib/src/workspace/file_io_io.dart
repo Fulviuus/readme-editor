@@ -119,6 +119,16 @@ Future<void> writeBinaryFile(String path, List<int> bytes) async {
   await File(path).writeAsBytes(bytes, flush: true);
 }
 
+/// Reads [path]'s bytes, or null when unreadable. Used synchronously by
+/// exporters embedding document images.
+List<int>? readBinaryFileSync(String path) {
+  try {
+    return File(path).readAsBytesSync();
+  } catch (_) {
+    return null;
+  }
+}
+
 /// Renames/moves [path] to [newPath]; returns the destination.
 Future<String> renameFile(String path, String newPath) async {
   await File(path).rename(newPath);

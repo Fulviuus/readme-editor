@@ -29,8 +29,13 @@ import '../editor/rendered_block.dart';
 import '../editor/source_view.dart';
 import '../theme/readme_theme.dart';
 import '../theme/theme_manager.dart';
+import '../workspace/export/docx_export.dart';
+import '../workspace/export/epub_export.dart';
+import '../workspace/export/latex_export.dart';
+import '../workspace/export/rtf_export.dart';
 import '../workspace/file_history.dart';
-import '../workspace/file_io.dart' show copyIntoFolder, writeBinaryFile;
+import '../workspace/file_io.dart'
+    show copyIntoFolder, readBinaryFileSync, writeBinaryFile, writeTextFile;
 import '../workspace/html_export.dart';
 import '../workspace/pandoc.dart';
 import '../workspace/pdf_export.dart';
@@ -432,13 +437,36 @@ class _HomeShellState extends State<HomeShell> {
     }
   }
 
-  /// File > Export > Word/OpenDocument/Epub/LaTeX/RTF via pandoc.
-  Future<void> _exportPandoc(String ext) async {
+  /// Resolves a document image reference to bytes for embedding in
+  /// exports (relative paths resolve against the document's folder).
+  List<int>? _imageBytesFor(String url) {
+    if (url.startsWith('http://') || url.startsWith('https://')) return null;
+    var path = url;
+    if (path.startsWith('file://')) {
+      try {
+        path = Uri.parse(path).toFilePath();
+      } catch (_) {
+        return null;
+      }
+    }
+    if (!p.isAbsolute(path)) {
+      final docDir = _doc.filePath == null ? null : p.dirname(_doc.filePath!);
+      if (docDir == null) return null;
+      path = p.normalize(p.join(docDir, path));
+    }
+    return readBinaryFileSync(path);
+  }
+
+  /// File > Export > Word/Epub/LaTeX/RTF are native; OpenDocument still
+  /// goes through pandoc.
+  Future<void> _exportDoc(String ext) async {
     _editor.commitSourceMode?.call();
-    final pandoc = await findPandoc();
-    if (pandoc == null) {
-      _showPandocMissing();
-      return;
+    if (ext == 'odt') {
+      final pandoc = await findPandoc();
+      if (pandoc == null) {
+        _showPandocMissing();
+        return;
+      }
     }
     final location = await getSaveLocation(
       acceptedTypeGroups: [
@@ -449,11 +477,29 @@ class _HomeShellState extends State<HomeShell> {
     if (location == null) return;
     var path = location.path;
     if (!path.toLowerCase().endsWith('.$ext')) path = '$path.$ext';
+    final title = p.basenameWithoutExtension(_fileName);
     try {
-      await pandocExport(pandoc, _doc.serialize(), path,
-          title: p.basenameWithoutExtension(_fileName));
+      switch (ext) {
+        case 'docx':
+          await writeBinaryFile(path,
+              buildDocx(_doc.doc, title: title, images: _imageBytesFor));
+        case 'epub':
+          await writeBinaryFile(
+              path,
+              buildEpub(_doc.serialize(), _editor.theme,
+                  title: title, images: _imageBytesFor));
+        case 'rtf':
+          await writeTextFile(path, buildRtf(_doc.doc));
+        case 'tex':
+          await writeTextFile(path, buildLatex(_doc.doc, title: title));
+        case 'odt':
+          final pandoc = await findPandoc();
+          await pandocExport(pandoc!, _doc.serialize(), path, title: title);
+      }
     } on PandocException catch (e) {
       _showErrorDialog('Export failed', e.message);
+    } catch (e) {
+      _showErrorDialog('Export failed', '$e');
     }
   }
 
@@ -464,8 +510,8 @@ class _HomeShellState extends State<HomeShell> {
       builder: (context) => AlertDialog(
         title: const Text('Pandoc required'),
         content: const Text(
-            'Importing and exporting these formats uses Pandoc, which was '
-            'not found on this system. Install it and try again.'),
+            'Importing documents and OpenDocument export use Pandoc, which '
+            'was not found on this system. Install it and try again.'),
         actions: [
           TextButton(
             onPressed: () =>
@@ -921,7 +967,7 @@ class _HomeShellState extends State<HomeShell> {
         checkForUpdates: _checkForUpdates,
         paste: _paste,
         importFile: _importFile,
-        exportPandoc: _exportPandoc,
+        exportPandoc: _exportDoc,
         exportHtml: _exportHtml,
         exportPdf: _exportPdf,
         exportImage: _exportImage,
