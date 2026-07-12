@@ -25,6 +25,30 @@ class ListBlockView extends StatelessWidget {
     final rows = <Widget>[];
     var lineStart = 0;
     final lines = block.source.split('\n');
+
+    // Size the marker column off the widest marker in the block so numbers
+    // right-align ("9." and "10." end at the same x) and every item's text
+    // starts at the same column, a fixed small gap after its marker.
+    final markerStyle = theme.bodyStyle;
+    var markerWidth = theme.fontSize * 0.6; // bullet minimum
+    for (final line in lines) {
+      final m = _itemRe.firstMatch(line);
+      final marker = m?.group(2);
+      if (m == null) continue;
+      if (m.group(4) != null) {
+        markerWidth =
+            markerWidth < theme.fontSize * 0.9 ? theme.fontSize * 0.9 : markerWidth;
+      } else if (RegExp(r'^\d').hasMatch(marker!)) {
+        final painter = TextPainter(
+          text: TextSpan(text: marker, style: markerStyle),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        if (painter.width > markerWidth) markerWidth = painter.width;
+      }
+    }
+    final gap = theme.fontSize * 0.45;
+    final slot = markerWidth + gap;
+
     for (var li = 0; li < lines.length; li++) {
       final line = lines[li];
       final m = _itemRe.firstMatch(line);
@@ -36,6 +60,8 @@ class ListBlockView extends StatelessWidget {
           _row(
             indentPx: _indentPx(line.substring(0, indentLen), theme.fontSize),
             glyph: null,
+            slot: slot,
+            gap: gap,
             content: line.substring(indentLen),
             contentBase: base + indentLen,
             hiddenPrefix: (base, base + indentLen),
@@ -58,20 +84,12 @@ class ListBlockView extends StatelessWidget {
                     lineIndex: li,
                   )
                 : ordered
-                ? Text(
-                    '$marker ',
-                    style: theme.bodyStyle.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: theme.foreground,
-                    ),
-                  )
-                : Text(
-                    '•  ',
-                    style: theme.bodyStyle.copyWith(
-                      color: theme.accent,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
+                ? Text(marker,
+                    style: markerStyle.copyWith(color: theme.foreground))
+                : Text('•',
+                    style: markerStyle.copyWith(color: theme.accent)),
+            slot: slot,
+            gap: gap,
             content: line.substring(m.end),
             contentBase: base + m.end,
             hiddenPrefix: (base, base + m.end),
@@ -93,6 +111,8 @@ class ListBlockView extends StatelessWidget {
   Widget _row({
     required double indentPx,
     required Widget? glyph,
+    required double slot,
+    required double gap,
     required String content,
     required int contentBase,
     required (int, int) hiddenPrefix,
@@ -116,9 +136,20 @@ class ListBlockView extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Marker column: right-aligned against a fixed gap so the marker
+          // hugs its text and all items share one text column.
           SizedBox(
-            width: theme.fontSize * 1.5,
-            child: glyph ?? const SizedBox.shrink(),
+            width: slot,
+            child: glyph == null
+                ? null
+                : Padding(
+                    padding: EdgeInsets.only(right: gap),
+                    child: Align(
+                      alignment: Alignment.topRight,
+                      heightFactor: 1,
+                      child: glyph,
+                    ),
+                  ),
           ),
           Expanded(
             child: TappableInlineText(
@@ -152,14 +183,18 @@ class _TaskCheckbox extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = editor.theme;
     final size = theme.fontSize * 0.85;
+    // Center the box on the first text line.
+    final lineHeight = theme.fontSize * (theme.bodyStyle.height ?? 1.5);
     return GestureDetector(
       onTap: () => editor.toggleTask(blockId, lineIndex),
       // Keep the box at its own size — the glyph slot's tight constraints
       // would otherwise stretch it to the full slot width.
       child: Align(
         alignment: Alignment.topLeft,
+        heightFactor: 1,
         child: Padding(
-          padding: EdgeInsets.only(top: theme.fontSize * 0.25),
+          padding: EdgeInsets.only(
+              top: ((lineHeight - size) / 2).clamp(0, lineHeight)),
           child: Container(
             width: size,
             height: size,
