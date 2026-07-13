@@ -43,7 +43,10 @@ class ListBlockView extends StatelessWidget {
           text: TextSpan(text: marker, style: markerStyle),
           textDirection: TextDirection.ltr,
         )..layout();
-        if (painter.width > markerWidth) markerWidth = painter.width;
+        // A box of exactly the measured width can still wrap the marker
+        // ("1" / "." on separate lines) from sub-pixel rounding — keep slack.
+        final w = painter.width.ceilToDouble() + 1;
+        if (w > markerWidth) markerWidth = w;
       }
     }
     final gap = theme.fontSize * 0.45;
@@ -96,8 +99,10 @@ class ListBlockView extends StatelessWidget {
                   )
                 : ordered
                 ? Text(marker,
+                    softWrap: false,
                     style: markerStyle.copyWith(color: theme.foreground))
                 : Text('•',
+                    softWrap: false,
                     style: markerStyle.copyWith(color: theme.accent)),
             slot: slot,
             gap: gap,
