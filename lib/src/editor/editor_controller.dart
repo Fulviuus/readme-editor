@@ -20,6 +20,7 @@ import 'inline_renderer.dart';
 import 'inline_tokenizer.dart';
 import 'markdown_editing_controller.dart';
 import 'spell/spell_checker.dart';
+import 'vim_controller.dart';
 
 final _listItemLineRe =
     RegExp(r'^(\s*)([-*+]|\d{1,9}[.)])([ \t]+)(\[[ xX]\][ \t]+)?');
@@ -37,6 +38,10 @@ class EditorController extends ChangeNotifier {
     editing.renderer = _renderer;
     editing.addListener(_onEditingChanged);
     focusNode.addListener(_onFocusNodeChanged);
+    // Modal key bindings run on the focused node itself — before the
+    // field, the structural-key Focus above it, and the platform IME.
+    focusNode.onKeyEvent = vim.handleKey;
+    vim.addListener(notifyListeners);
     docCtrl.addListener(_refreshDefinitions);
     _refreshDefinitions();
   }
@@ -51,6 +56,11 @@ class EditorController extends ChangeNotifier {
   final DocumentController docCtrl;
   final MarkdownEditingController editing = MarkdownEditingController();
   final FocusNode focusNode = FocusNode(debugLabel: 'readme-editing-block');
+
+  /// Modal key bindings (Preferences > Editor > Key bindings).
+  late final VimController vim = VimController(this);
+  bool get vimEnabled => vim.enabled;
+  set vimEnabled(bool v) => vim.enabled = v;
 
   InlineRenderer _renderer;
   ReadmeTheme _theme;
@@ -2872,6 +2882,7 @@ class EditorController extends ChangeNotifier {
     _spellTimer?.cancel();
     editing.removeListener(_onEditingChanged);
     focusNode.removeListener(_onFocusNodeChanged);
+    vim.dispose();
     editing.dispose();
     focusNode.dispose();
     sourceModeEnabled.dispose();

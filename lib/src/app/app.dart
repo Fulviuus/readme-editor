@@ -82,6 +82,7 @@ class _ReadmeAppState extends State<ReadmeApp> with WidgetsBindingObserver {
       ..codeDefaultLanguage = _settings.codeDefaultLanguage
       ..typewriterCenterAlways = _settings.typewriterCenterAlways
       ..sourceHighlightEnabled = _settings.sourceHighlight
+      ..vimEnabled = _settings.vimMode
       ..diagramsEnabled = _settings.diagrams
       ..codeLineNumbers = _settings.codeLineNumbers
       ..autoWrapCode = _settings.autoWrapCode

@@ -83,6 +83,15 @@ class StatusBar extends StatelessWidget {
                   ),
                 ),
               ),
+              if (editor.vim.enabled) ...[
+                const SizedBox(width: 16),
+                Text(
+                  editor.focusedBlockId == null
+                      ? '·'
+                      : editor.vim.modeLabel,
+                  style: style.copyWith(fontWeight: FontWeight.w700),
+                ),
+              ],
               if (crumbs.isNotEmpty) ...[
                 const SizedBox(width: 16),
                 Flexible(

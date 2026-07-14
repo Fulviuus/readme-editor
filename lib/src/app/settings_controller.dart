@@ -71,6 +71,9 @@ class SettingsController extends ChangeNotifier {
   /// Markdown syntax coloring in source mode.
   bool sourceHighlight = true;
 
+  /// Modal (Vim-style) key bindings in the editor.
+  bool vimMode = false;
+
   // ---- Image ----
   bool copyImagesToAssets = false;
 
@@ -161,6 +164,7 @@ class SettingsController extends ChangeNotifier {
       typewriterCenterAlways =
           await _prefs.getBool('typewriterCenterAlways') ?? true;
       sourceHighlight = await _prefs.getBool('sourceHighlight') ?? true;
+      vimMode = await _prefs.getBool('vimMode') ?? false;
       autoWrapCode = await _prefs.getBool('autoWrapCode') ?? true;
       codeDefaultLanguage =
           await _prefs.getString('codeDefaultLanguage') ?? '';
