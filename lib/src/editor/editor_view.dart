@@ -107,7 +107,25 @@ class _EditorViewState extends State<EditorView> {
               // area, so a mouse drag selects across blocks and Cmd+C
               // copies the rendered text. The focused block's TextField
               // keeps its own selection; plain clicks still focus blocks.
-              child: SelectionArea(
+              // Backspace/Delete on such a selection bubbles up from the
+              // selection region (which took focus on drag) to this Focus;
+              // it must stay inert while the editing TextField has focus.
+              child: Focus(
+                canRequestFocus: false,
+                skipTraversal: true,
+                onKeyEvent: (node, event) {
+                  if (event is! KeyDownEvent ||
+                      (event.logicalKey != LogicalKeyboardKey.backspace &&
+                          event.logicalKey != LogicalKeyboardKey.delete) ||
+                      editor.focusNode.hasFocus ||
+                      !editor.hasCrossSelection) {
+                    return KeyEventResult.ignored;
+                  }
+                  return editor.deleteCrossSelection()
+                      ? KeyEventResult.handled
+                      : KeyEventResult.ignored;
+                },
+                child: SelectionArea(
                 child: ListView.builder(
                 controller: _scrollController,
                 // Typewriter mode pads by half a viewport so the first and
@@ -141,6 +159,7 @@ class _EditorViewState extends State<EditorView> {
                     ),
                   );
                 },
+                ),
                 ),
               ),
             );

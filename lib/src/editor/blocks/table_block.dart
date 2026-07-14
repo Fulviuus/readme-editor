@@ -134,6 +134,8 @@ class TableBlockView extends StatelessWidget {
           onOpenLink: editor.openLink,
           textAlign: align,
           onCaret: (offset) => editor.focusBlock(block.id, offset: offset),
+          editor: editor,
+          blockId: block.id,
         ),
       ),
     );

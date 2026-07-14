@@ -40,6 +40,8 @@ class CodeBlockView extends StatelessWidget {
       runs: runs,
       softWrap: wrap,
       onCaret: (offset) => editor.focusBlock(block.id, offset: offset),
+      editor: editor,
+      blockId: block.id,
     );
   }
 

@@ -177,6 +177,8 @@ class ListBlockView extends StatelessWidget {
               links: r.links,
               onOpenLink: editor.openLink,
               onCaret: (offset) => editor.focusBlock(block.id, offset: offset),
+              editor: editor,
+              blockId: block.id,
             ),
           ),
         ],

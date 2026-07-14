@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:readme/src/document/document_controller.dart';
@@ -75,6 +76,63 @@ void main() {
     expect(clipboard, isNotEmpty);
     expect(clipboard.last, contains('alpha one'));
     expect(clipboard.last, contains('beta two'));
+  });
+
+  testWidgets('backspace deletes a cross-block selection in one undo step',
+      (tester) async {
+    final docCtrl = DocumentController()
+      ..loadText('alpha one\n\nbeta two\n\ngamma three');
+    final editor = EditorController(docCtrl, theme());
+    addTearDown(() {
+      editor.dispose();
+      docCtrl.dispose();
+    });
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: EditorView(editor: editor)),
+    ));
+    await tester.pumpAndSettle();
+
+    Finder blockText(String needle) => find.byWidgetPredicate(
+        (w) => w is RichText && w.text.toPlainText().contains(needle));
+
+    // Drag from mid-"alpha one" (after 'alpha ') into mid-"gamma three"
+    // (after 'gamma'): the selection spans all three blocks. The paragraphs
+    // fill the whole content column, so aim at real glyph boxes, not at
+    // fractions of the widget rect.
+    Offset caretAt(String needle, int offset) {
+      final p = tester.renderObject<RenderParagraph>(blockText(needle));
+      final box = p
+          .getBoxesForSelection(
+              TextSelection(baseOffset: offset, extentOffset: offset + 1))
+          .first;
+      return p.localToGlobal(
+          Offset(box.left + 1, (box.top + box.bottom) / 2));
+    }
+
+    final start = caretAt('alpha one', 6);
+    final end = caretAt('gamma three', 5);
+
+    final gesture = await tester.startGesture(start,
+        kind: PointerDeviceKind.mouse, buttons: kPrimaryButton);
+    await tester.pump();
+    await gesture.moveTo(end);
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(editor.hasCrossSelection, isTrue);
+    await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+    await tester.pumpAndSettle();
+
+    expect(docCtrl.doc.serialize(), 'alpha  three');
+
+    // One undo restores everything.
+    editor.undo();
+    await tester.pumpAndSettle();
+    expect(
+        docCtrl.doc.serialize(), 'alpha one\n\nbeta two\n\ngamma three');
+    await tester.pump(const Duration(milliseconds: 300));
   });
 
   testWidgets('plain click still focuses the block through SelectionArea',

@@ -394,6 +394,93 @@ class EditorController extends ChangeNotifier {
     focusBlock(tail.id);
   }
 
+  /// Cross-block selection (rendered blocks under the SelectionArea): each
+  /// TappableInlineText reports its selected slice as SOURCE offsets in its
+  /// block, keyed by the reporting widget. `full*` are the same edges
+  /// extended over hidden affixes (markers/prefixes) where the selection
+  /// visually covers the text to that edge.
+  final _crossSel = <Object,
+      ({String blockId, int start, int end, int fullStart, int fullEnd})>{};
+
+  void updateCrossSelection(
+    Object client,
+    String blockId, {
+    required int start,
+    required int end,
+    required int fullStart,
+    required int fullEnd,
+  }) {
+    if (end <= start) {
+      _crossSel.remove(client);
+      return;
+    }
+    _crossSel[client] = (
+      blockId: blockId,
+      start: start,
+      end: end,
+      fullStart: fullStart,
+      fullEnd: fullEnd,
+    );
+  }
+
+  void clearCrossSelection(Object client) => _crossSel.remove(client);
+
+  bool get hasCrossSelection => _crossSel.isNotEmpty;
+
+  /// Deletes the cross-block selection as ONE undoable splice: the first
+  /// block's unselected prefix and the last block's unselected suffix join
+  /// into a fragment that is re-scanned; every block fully inside the
+  /// selection — including non-text ones (diagrams, rules) — goes with it.
+  bool deleteCrossSelection() {
+    if (_crossSel.isEmpty) return false;
+    final doc = docCtrl.doc;
+    final parts = <(
+      int,
+      ({String blockId, int start, int end, int fullStart, int fullEnd})
+    )>[];
+    for (final p in _crossSel.values) {
+      final i = doc.indexOfBlock(p.blockId);
+      if (i >= 0) parts.add((i, p));
+    }
+    if (parts.isEmpty) return false;
+    parts.sort(
+        (a, b) => a.$1 != b.$1 ? a.$1 - b.$1 : a.$2.start - b.$2.start);
+    final i0 = parts.first.$1;
+    final i1 = parts.last.$1;
+    final firstBlock = doc.blocks[i0];
+    final lastBlock = doc.blocks[i1];
+    final s0 = parts.first.$2.fullStart.clamp(0, firstBlock.source.length);
+    final s1 = parts.last.$2.fullEnd.clamp(0, lastBlock.source.length);
+    if (i0 == i1 && s1 <= s0) return false;
+    final prefix = firstBlock.source.substring(0, s0);
+    final suffix = lastBlock.source.substring(s1);
+    final scanned = splitMarkdown(prefix + suffix, isFragment: true).blocks;
+    if (scanned.isEmpty) {
+      scanned.add(Block(kind: BlockKind.paragraph, source: ''));
+    }
+    final after = [
+      Block(
+        id: firstBlock.id,
+        kind: scanned.first.kind,
+        source: scanned.first.source,
+        blankLinesBefore: firstBlock.blankLinesBefore,
+      ),
+      ...scanned.skip(1),
+    ];
+    docCtrl.spliceBlocks(
+      index: i0,
+      before: [for (var i = i0; i <= i1; i++) doc.blocks[i]],
+      after: after,
+      kind: EditKind.blockOp,
+      caretBefore: CaretSnapshot(firstBlock.id, s0),
+      caretAfter: CaretSnapshot(firstBlock.id, s0),
+    );
+    _crossSel.clear();
+    focusBlock(firstBlock.id,
+        offset: s0.clamp(0, after.first.source.length));
+    return true;
+  }
+
   TextSelection _clampSelection(TextSelection sel, int max) =>
       TextSelection(
         baseOffset: sel.baseOffset.clamp(0, max),

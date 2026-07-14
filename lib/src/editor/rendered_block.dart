@@ -4,7 +4,8 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show RenderParagraph;
+import 'package:flutter/rendering.dart'
+    show RenderParagraph, SelectionRegistrar, SelectionStatus;
 import 'package:flutter/services.dart';
 import 'package:flutter_math_fork/flutter_math.dart' show Math, MathStyle;
 
@@ -84,6 +85,8 @@ class RenderedBlock extends StatelessWidget {
       links: r.links,
       onOpenLink: editor.openLink,
       onCaret: _focusAt,
+      editor: editor,
+      blockId: block.id,
     );
   }
 
@@ -128,6 +131,8 @@ class RenderedBlock extends StatelessWidget {
       onOpenLink: editor.openLink,
       onCaret: _focusAt,
       textAlign: align,
+      editor: editor,
+      blockId: block.id,
     );
     final border = level == 1
         ? (theme.h1BorderBottom, theme.h1BorderWidth)
@@ -262,6 +267,8 @@ class RenderedBlock extends StatelessWidget {
         links: r.links,
         onOpenLink: editor.openLink,
         onCaret: _focusAt,
+        editor: editor,
+        blockId: block.id,
       ));
       lineStart += line.length + 1;
     }
@@ -373,6 +380,8 @@ class TappableInlineText extends StatefulWidget {
     this.onOpenLink,
     this.textAlign = TextAlign.start,
     this.softWrap = true,
+    this.editor,
+    this.blockId,
   });
 
   final InlineSpan span;
@@ -383,12 +392,70 @@ class TappableInlineText extends StatefulWidget {
   final TextAlign textAlign;
   final bool softWrap;
 
+  /// When both are set, this text reports its share of a cross-block
+  /// selection to the editor (as source offsets), so Backspace/Delete can
+  /// remove selected text that spans rendered blocks.
+  final EditorController? editor;
+  final String? blockId;
+
   @override
   State<TappableInlineText> createState() => _TappableInlineTextState();
 }
 
 class _TappableInlineTextState extends State<TappableInlineText> {
   final _textKey = GlobalKey();
+  final _selNotifier = SelectionListenerNotifier();
+
+  @override
+  void initState() {
+    super.initState();
+    _selNotifier.addListener(_onSelectionChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.editor?.clearCrossSelection(this);
+    _selNotifier.dispose();
+    super.dispose();
+  }
+
+  void _onSelectionChanged() {
+    final editor = widget.editor;
+    final blockId = widget.blockId;
+    if (editor == null || blockId == null) return;
+    final sel = _selNotifier.selection;
+    final range = sel.status == SelectionStatus.uncollapsed ? sel.range : null;
+    if (range == null || widget.runs.isEmpty) {
+      editor.clearCrossSelection(this);
+      return;
+    }
+    final r0 = range.startOffset < range.endOffset
+        ? range.startOffset
+        : range.endOffset;
+    final r1 = range.startOffset < range.endOffset
+        ? range.endOffset
+        : range.startOffset;
+    if (r0 == r1) {
+      editor.clearCrossSelection(this);
+      return;
+    }
+    // A selection reaching this text's rendered edge visually swallows the
+    // hidden affixes there (list markers, `#`/`>` prefixes, closing fences)
+    // — report both the exact range and the affix-extended one; the editor
+    // uses the extended edges everywhere except the selection's outer ends.
+    editor.updateCrossSelection(
+      this,
+      blockId,
+      start: renderedToSource(widget.runs, r0),
+      end: renderedToSource(widget.runs, r1),
+      fullStart: r0 == 0
+          ? widget.runs.first.sStart
+          : renderedToSource(widget.runs, r0),
+      fullEnd: r1 >= widget.runs.last.rEnd
+          ? widget.runs.last.sEnd
+          : renderedToSource(widget.runs, r1),
+    );
+  }
 
   int? _renderedOffsetAt(Offset globalPosition) {
     final render =
@@ -455,22 +522,38 @@ class _TappableInlineTextState extends State<TappableInlineText> {
     // Register into an enclosing SelectionArea (cross-block selection);
     // RichText, unlike Text, does not opt in by itself.
     final registrar = SelectionContainer.maybeOf(context);
+    final selectionColor = registrar == null
+        ? null
+        : DefaultSelectionStyle.of(context).selectionColor ??
+            Theme.of(context).textSelectionTheme.selectionColor;
+    Widget rich(SelectionRegistrar? r) => RichText(
+          key: _textKey,
+          text: widget.span,
+          textAlign: widget.textAlign,
+          softWrap: widget.softWrap,
+          overflow: widget.softWrap ? TextOverflow.clip : TextOverflow.visible,
+          selectionRegistrar: r,
+          selectionColor: selectionColor,
+        );
+    Widget child;
+    if (registrar == null || widget.editor == null || widget.blockId == null) {
+      child = rich(registrar);
+    } else {
+      // The listener interposes its own container: the RichText must
+      // register with THAT (from a context below it), or the listener
+      // never sees the selection.
+      child = SelectionListener(
+        selectionNotifier: _selNotifier,
+        child: Builder(
+          builder: (inner) => rich(SelectionContainer.maybeOf(inner)),
+        ),
+      );
+    }
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTapUp: _onTapUp,
       onSecondaryTapUp: widget.links.isEmpty ? null : _onSecondaryTapUp,
-      child: RichText(
-        key: _textKey,
-        text: widget.span,
-        textAlign: widget.textAlign,
-        softWrap: widget.softWrap,
-        overflow: widget.softWrap ? TextOverflow.clip : TextOverflow.visible,
-        selectionRegistrar: registrar,
-        selectionColor: registrar == null
-            ? null
-            : DefaultSelectionStyle.of(context).selectionColor ??
-                Theme.of(context).textSelectionTheme.selectionColor,
-      ),
+      child: child,
     );
   }
 }
